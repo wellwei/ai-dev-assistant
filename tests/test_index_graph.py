@@ -55,3 +55,46 @@ def test_index_graph_skips_unchanged_files_on_second_run(tmp_path):
 
     assert len(first["changed_files"]) == 1
     assert len(second["changed_files"]) == 0
+
+from langgraph.checkpoint.memory import InMemorySaver
+
+from src.assistant_graph import create_assistant_graph
+
+
+def test_index_then_assistant_answer_end_to_end(tmp_path):
+    project = tmp_path / "doll_escort_game_svr"
+    (project / "src/map_data").mkdir(parents=True)
+    (project / "doc").mkdir()
+    (project / "src/map_data/sea_route.cpp").write_text(
+        """
+// only query route
+int query_route(Context* ctx) {
+    ctx->mutable_route()->set_state(1);
+    send_route_packet(ctx);
+    return 0;
+}
+""",
+        encoding="utf-8",
+    )
+    (project / "doc/readme.md").write_text("# route\n押镖路线说明", encoding="utf-8")
+
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    index_graph = create_index_graph(repo)
+    index_result = index_graph.invoke({"project_root": str(project), "index_db_path": str(db_path)})
+    assert index_result["run_status"] == "success"
+
+    assistant_graph = create_assistant_graph(repo=repo, checkpointer=InMemorySaver())
+    answer = assistant_graph.invoke(
+        {
+            "question": "押镖 route 逻辑在哪里，改动有什么风险？",
+            "project_root": str(project),
+            "index_db_path": str(db_path),
+            "thread_id": "thread-e2e",
+        },
+        {"configurable": {"thread_id": "thread-e2e"}},
+    )
+
+    assert "src/map_data/sea_route.cpp" in answer["answer"]
+    assert "置信度" in answer["answer"]
+    assert "注释" in answer["answer"] or "命名" in answer["answer"]

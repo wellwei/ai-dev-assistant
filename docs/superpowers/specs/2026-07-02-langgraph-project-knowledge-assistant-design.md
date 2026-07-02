@@ -604,3 +604,7 @@ venv/
 - 沉淀项目专属开发经验。
 
 Hermes Agent 不进入首期实现，仅作为后期架构预留。
+
+## Implementation Status
+
+Initial implementation completed when the corresponding plan at `docs/superpowers/plans/2026-07-02-langgraph-project-knowledge-assistant.md` passes the full test suite and the read-only real-project indexing smoke test. The target C++ project remains read-only unless the user explicitly approves stronger actions.
