@@ -42,9 +42,12 @@ def test_assistant_graph_answers_project_question_and_persists_note(tmp_path):
     )
 
     assert result["request_type"] == "project_qa"
+    assert "This is a project question or requirement research request." in result["analysis"]
+    assert "这是项目问答" not in result["analysis"]
     assert "src/route.cpp" in result["answer"]
     assert "置信度" in result["answer"]
     assert "注释" in result["answer"] or "命名" in result["answer"]
+    assert "This is a project question or requirement research request." not in result["answer"]
     assert result["research_note_id"] is not None
 
     with connect_db(db_path) as conn:
@@ -67,8 +70,35 @@ def test_assistant_graph_classifies_development_advice(tmp_path):
     )
 
     assert result["request_type"] == "development_advice"
+    assert "This is a development-advice request." in result["analysis"]
+    assert result["suggested_commands"] == [
+        "Read the relevant files locally to confirm implementation evidence.",
+        "If a build is needed, ask the user before running company project build commands.",
+    ]
     assert "建议" in result["answer"]
     assert "不要直接修改" in result["answer"]
+    assert "This is a development-advice request." not in result["answer"]
+
+
+def test_assistant_graph_keeps_unclear_internal_text_english_and_user_answer_chinese(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = _seed_repo(db_path)
+    graph = create_assistant_graph(repo=repo, checkpointer=InMemorySaver())
+
+    result = graph.invoke(
+        {
+            "question": "",
+            "project_root": "/tmp/project",
+            "index_db_path": str(db_path),
+            "thread_id": "thread-unclear",
+        },
+        {"configurable": {"thread_id": "thread-unclear"}},
+    )
+
+    assert result["analysis"] == "The user question is empty or unclear; ask for the module, requirement, or file scope."
+    assert result["open_questions"] == ["Which business area, file, or requirement do you want to investigate?"]
+    assert "当前索引中没有找到足够信息" in result["answer"]
+    assert "The user question is empty or unclear" not in result["answer"]
 
 
 def test_create_graph_does_not_create_checkpoint_directory_during_factory(tmp_path, monkeypatch):

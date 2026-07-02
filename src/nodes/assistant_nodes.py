@@ -45,60 +45,116 @@ def analyze_request_node(state: AssistantState) -> dict:
 
     if request_type == "unclear":
         return {
-            "analysis": "用户问题为空或不清楚，需要补充要了解的模块、需求或文件范围。",
-            "open_questions": ["请说明你想了解的业务点、文件或需求背景。"],
+            "analysis": "The user question is empty or unclear; ask for the module, requirement, or file scope.",
+            "open_questions": ["Which business area, file, or requirement do you want to investigate?"],
         }
 
     if context.startswith("No indexed project context"):
         return {
-            "analysis": "索引中没有找到足够上下文。需要先运行或刷新项目索引。",
-            "open_questions": ["是否先运行 index_graph 刷新项目知识库？"],
-            "suggested_commands": ["运行 index_graph 扫描目标项目"],
+            "analysis": "The project index did not return enough context; refresh the project index before answering.",
+            "open_questions": ["Should the index_graph be run to refresh the project knowledge base?"],
+            "suggested_commands": ["Run index_graph to scan the target project."],
         }
 
     if request_type == "development_advice":
         analysis = (
-            "这是开发建议请求。基于已索引上下文，先给影响范围、风险、建议修改顺序和验证命令；"
-            "首期不要直接修改公司 C++ 项目。\n\n"
+            "This is a development-advice request. Use the indexed context to identify impact scope, risks, "
+            "recommended change order, and verification actions. Do not directly modify the company C++ project "
+            "in the initial assistant flow.\n\n"
             f"{context}"
         )
         return {
             "analysis": analysis,
             "suggested_commands": [
-                "先针对相关文件做局部阅读确认实现证据",
-                "如需构建，先征得用户确认后再运行公司项目构建命令",
+                "Read the relevant files locally to confirm implementation evidence.",
+                "If a build is needed, ask the user before running company project build commands.",
             ],
         }
 
     analysis = (
-        "这是项目问答或需求调研请求。回答必须区分实现证据与命名/注释线索；"
-        "如存在 inconsistency flags，要明确提示。\n\n"
+        "This is a project question or requirement research request. Distinguish implementation evidence from "
+        "naming, comments, and documentation clues. Highlight any inconsistency flags explicitly.\n\n"
         f"{context}"
     )
     return {"analysis": analysis}
 
 
+def _request_type_label(request_type: str) -> str:
+    labels = {
+        "project_qa": "项目问答",
+        "requirement_research": "需求调研",
+        "development_advice": "开发建议",
+        "index_request": "索引刷新",
+        "unclear": "信息不明确",
+    }
+    return labels.get(request_type, request_type)
+
+
+def _context_summary_for_user(results: list[dict]) -> list[str]:
+    lines: list[str] = []
+    for item in results:
+        path = item.get("path")
+        if not path:
+            continue
+        confidence = item.get("confidence") or "low"
+        inconsistencies = item.get("inconsistencies") or "none"
+        evidence = item.get("evidence") or "indexed summary"
+        lines.append(f"- `{path}`：索引命中；证据={evidence}；不一致标记={inconsistencies}；confidence={confidence}。")
+    return lines
+
+
+def _suggested_command_label(command: str) -> str:
+    labels = {
+        "Run index_graph to scan the target project.": "运行 index_graph 扫描目标项目。",
+        "Read the relevant files locally to confirm implementation evidence.": "先局部阅读相关文件，确认实际实现证据。",
+        "If a build is needed, ask the user before running company project build commands.": (
+            "如需构建，先征得用户确认，再运行公司项目构建命令。"
+        ),
+    }
+    return labels.get(command, command)
+
+
+def _open_question_label(question: str) -> str:
+    labels = {
+        "Which business area, file, or requirement do you want to investigate?": (
+            "请说明你想了解的业务点、文件或需求背景。"
+        ),
+        "Should the index_graph be run to refresh the project knowledge base?": (
+            "是否先运行 index_graph 刷新项目知识库？"
+        ),
+    }
+    return labels.get(question, question)
+
+
 def synthesize_response_node(state: AssistantState) -> dict:
     request_type = state.get("request_type", "unclear")
     related_paths = state.get("related_paths", [])
-    analysis = state.get("analysis", "")
+    retrieved_context = state.get("retrieved_context", [])
     open_questions = state.get("open_questions", [])
     suggested_commands = state.get("suggested_commands", [])
 
     if not related_paths:
         answer = (
             "结论：当前索引中没有找到足够信息。\n\n"
-            f"依据：{analysis}\n\n"
+            "依据：助手内部分析认为问题不清楚，或当前 SQLite 项目索引没有匹配到足够上下文。\n\n"
             "风险/不确定性：不能根据空索引编造项目结构。\n\n"
             "下一步建议：先刷新项目索引，或提供更具体的模块、文件、业务关键词。"
         )
+        if suggested_commands:
+            answer += "\n\n建议验证命令/动作：\n" + "\n".join(
+                f"- {_suggested_command_label(command)}" for command in suggested_commands
+            )
+        if open_questions:
+            answer += "\n\n待确认问题：\n" + "\n".join(
+                f"- {_open_question_label(question)}" for question in open_questions
+            )
         return {"answer": answer}
 
     answer_lines = [
-        f"结论：这是 `{request_type}` 请求，相关信息主要集中在以下文件：{', '.join(related_paths)}。",
+        f"结论：这是{_request_type_label(request_type)}请求，相关信息主要集中在以下文件：{', '.join(related_paths)}。",
         "",
         "依据：以下结论来自 SQLite 项目索引中的实现摘要、符号扫描、副作用线索和一致性标记。",
-        analysis,
+        *_context_summary_for_user(retrieved_context),
         "",
         "风险/不确定性：老 C++ 项目中注释、文档、函数名和字段名可能过时或误导；以上判断不能只按命名理解，改动前必须核对实际实现和调用链。",
         "",
@@ -112,9 +168,9 @@ def synthesize_response_node(state: AssistantState) -> dict:
             ]
         )
     if suggested_commands:
-        answer_lines.extend(["", "建议验证命令/动作：", *[f"- {cmd}" for cmd in suggested_commands]])
+        answer_lines.extend(["", "建议验证命令/动作：", *[f"- {_suggested_command_label(cmd)}" for cmd in suggested_commands]])
     if open_questions:
-        answer_lines.extend(["", "待确认问题：", *[f"- {question}" for question in open_questions]])
+        answer_lines.extend(["", "待确认问题：", *[f"- {_open_question_label(question)}" for question in open_questions]])
 
     return {"answer": "\n".join(answer_lines)}
 
