@@ -69,3 +69,14 @@ def test_assistant_graph_classifies_development_advice(tmp_path):
     assert result["request_type"] == "development_advice"
     assert "建议" in result["answer"]
     assert "不要直接修改" in result["answer"]
+
+
+def test_create_graph_does_not_create_checkpoint_directory_during_factory(tmp_path, monkeypatch):
+    from src import graph as graph_module
+
+    monkeypatch.chdir(tmp_path)
+
+    app = graph_module.create_graph()
+
+    assert type(app).__name__ == "CompiledStateGraph"
+    assert not (tmp_path / "checkpoints").exists()
