@@ -1,6 +1,8 @@
 from pathlib import Path
 import sqlite3
 
+from src.storage.migrations import apply_migrations
+
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
@@ -22,4 +24,5 @@ def connect_db(path: str | Path) -> sqlite3.Connection:
 def init_schema(conn: sqlite3.Connection) -> None:
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     conn.executescript(schema)
+    apply_migrations(conn)
     conn.commit()

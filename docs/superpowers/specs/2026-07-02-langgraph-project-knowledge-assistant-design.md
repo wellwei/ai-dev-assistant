@@ -43,6 +43,7 @@
 6. 状态中不保存完整大文件内容，只保存摘要、相关路径、必要片段和结论，避免 checkpoint 膨胀。
 7. 索引必须可增量更新，不能每次无差别全量重建。
 8. 助手内部与模型交互、节点间推理文本、`analysis`、`open_questions`、`suggested_commands` 等非用户可见内容必须使用英文；只有最终输出给用户的 `answer` 使用中文。
+9. 每一次代码、设计、行为、检索排序、schema、安全边界或规范改进，都必须写入开发历史记录；记录内容至少包括日期、修改内容、完成或改变的功能、影响文件或模块、验证结果和后续事项。
 
 ## 总体架构
 
@@ -614,3 +615,5 @@ Hermes Agent 不进入首期实现，仅作为后期架构预留。
 ## Implementation Status
 
 Initial implementation completed when the corresponding plan at `docs/superpowers/plans/2026-07-02-langgraph-project-knowledge-assistant.md` passes the full test suite and the read-only real-project indexing smoke test. The target C++ project remains read-only unless the user explicitly approves stronger actions.
+
+Development history is tracked in `docs/superpowers/history/2026-07-02-development-history.md`. Every future implementation or behavior change must append an entry there before the task is considered complete.

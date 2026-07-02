@@ -22,10 +22,17 @@ class AssistantState(TypedDict, total=False):
     project_root: str
     index_db_path: str
     thread_id: str
+    flow_version: str
     question: str
     request_type: str
     retrieved_context: Annotated[list[dict], operator.add]
+    retrieved_memory: Annotated[list[dict], operator.add]
     related_paths: Annotated[list[str], operator.add]
+    memory_note_ids: Annotated[list[int], operator.add]
+    source_note_ids: Annotated[list[int], operator.add]
+    selected_workflow: dict
+    workflow_steps: Annotated[list[dict], operator.add]
+    approval_required: bool
     analysis: str
     answer: str
     open_questions: Annotated[list[str], operator.add]

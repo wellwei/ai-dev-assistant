@@ -4,14 +4,23 @@ from src.config import settings
 from src.indexer.models import ResearchNote
 from src.retriever.context_builder import build_context
 from src.retriever.keyword_search import search_project_index
+from src.retriever.research_memory import search_research_memory
 from src.state import AssistantState
 from src.storage.project_index import ProjectIndexRepository
+from src.workflows.registry import select_workflow
+
+
+ASSISTANT_FLOW_VERSION = "2026-07-02.foundation-v1"
 
 
 def _repo(state: AssistantState, default_repo: ProjectIndexRepository | None = None) -> ProjectIndexRepository:
     if default_repo is not None:
         return default_repo
     return ProjectIndexRepository(state.get("index_db_path") or settings.PROJECT_INDEX_DB)
+
+
+def ensure_flow_version_node(state: AssistantState) -> dict:
+    return {"flow_version": state.get("flow_version") or ASSISTANT_FLOW_VERSION}
 
 
 def classify_request_node(state: AssistantState) -> dict:
@@ -30,6 +39,29 @@ def classify_request_node(state: AssistantState) -> dict:
     return {"request_type": request_type}
 
 
+def select_workflow_node(state: AssistantState) -> dict:
+    workflow = select_workflow(state.get("question", ""), state.get("request_type", "unclear"))
+    return {
+        "selected_workflow": workflow,
+        "workflow_steps": workflow.get("workflow_steps", []),
+        "approval_required": bool(workflow.get("approval_required")),
+    }
+
+
+def retrieve_research_memory_node(state: AssistantState, repo: ProjectIndexRepository | None = None) -> dict:
+    repository = _repo(state, repo)
+    hits = search_research_memory(
+        repository.db_path,
+        state.get("question", ""),
+        project_root=state.get("project_root", ""),
+    )
+    return {
+        "retrieved_memory": hits,
+        "memory_note_ids": [int(item["id"]) for item in hits],
+        "source_note_ids": [int(item["id"]) for item in hits],
+    }
+
+
 def retrieve_project_context_node(state: AssistantState, repo: ProjectIndexRepository | None = None) -> dict:
     repository = _repo(state, repo)
     results = search_project_index(repository.db_path, state.get("question", ""))
@@ -39,9 +71,22 @@ def retrieve_project_context_node(state: AssistantState, repo: ProjectIndexRepos
     }
 
 
+def _memory_context(memory: list[dict]) -> str:
+    if not memory:
+        return "No prior research memory matched the request."
+    lines = []
+    for item in memory:
+        lines.append(
+            f"Research note #{item.get('id')}: {item.get('internal_memory_summary') or item.get('answer_summary') or ''} "
+            f"Paths={item.get('related_paths') or []}. Historical assistant memory only; current implementation evidence wins."
+        )
+    return "\n".join(lines)
+
+
 def analyze_request_node(state: AssistantState) -> dict:
     request_type = state.get("request_type", "unclear")
     context = build_context(state.get("retrieved_context", []))
+    memory_context = _memory_context(state.get("retrieved_memory", []))
 
     if request_type == "unclear":
         return {
@@ -61,7 +106,7 @@ def analyze_request_node(state: AssistantState) -> dict:
             "This is a development-advice request. Use the indexed context to identify impact scope, risks, "
             "recommended change order, and verification actions. Do not directly modify the company C++ project "
             "in the initial assistant flow.\n\n"
-            f"{context}"
+            f"{context}\n\nPrior research memory:\n{memory_context}"
         )
         return {
             "analysis": analysis,
@@ -74,7 +119,7 @@ def analyze_request_node(state: AssistantState) -> dict:
     analysis = (
         "This is a project question or requirement research request. Distinguish implementation evidence from "
         "naming, comments, and documentation clues. Highlight any inconsistency flags explicitly.\n\n"
-        f"{context}"
+        f"{context}\n\nPrior research memory:\n{memory_context}"
     )
     return {"analysis": analysis}
 
@@ -126,12 +171,25 @@ def _open_question_label(question: str) -> str:
     return labels.get(question, question)
 
 
+def _memory_summary_for_user(memory: list[dict]) -> list[str]:
+    lines: list[str] = []
+    for item in memory:
+        note_id = item.get("id")
+        paths = item.get("related_paths") or []
+        summary = item.get("user_answer_summary") or item.get("answer_summary") or "历史调研记录。"
+        lines.append(f"- note#{note_id} 曾涉及 {', '.join(paths) or '未记录路径'}：{summary} 这是历史助手结论，当前实现证据优先。")
+    return lines
+
+
 def synthesize_response_node(state: AssistantState) -> dict:
     request_type = state.get("request_type", "unclear")
     related_paths = state.get("related_paths", [])
     retrieved_context = state.get("retrieved_context", [])
+    retrieved_memory = state.get("retrieved_memory", [])
     open_questions = state.get("open_questions", [])
     suggested_commands = state.get("suggested_commands", [])
+    selected_workflow = state.get("selected_workflow", {})
+    approval_required = state.get("approval_required", False)
 
     if not related_paths:
         answer = (
@@ -167,6 +225,16 @@ def synthesize_response_node(state: AssistantState) -> dict:
                 "建议：不要直接修改公司 C++ 项目。先局部阅读相关文件，确认实际读写、副作用、线程/帧边界，再提出补丁。",
             ]
         )
+    if selected_workflow:
+        approval_text = "需要审批" if approval_required else "默认只读，无需审批"
+        answer_lines.extend(
+            [
+                "",
+                f"建议工作流：{selected_workflow.get('workflow_name')}（{approval_text}）。",
+            ]
+        )
+    if retrieved_memory:
+        answer_lines.extend(["", "历史调研记忆：", *_memory_summary_for_user(retrieved_memory)])
     if suggested_commands:
         answer_lines.extend(["", "建议验证命令/动作：", *[f"- {_suggested_command_label(cmd)}" for cmd in suggested_commands]])
     if open_questions:
@@ -190,6 +258,11 @@ def persist_research_note_node(state: AssistantState, repo: ProjectIndexReposito
             answer_summary=answer[:1000],
             related_paths=json.dumps(state.get("related_paths", []), ensure_ascii=False),
             open_questions=json.dumps(state.get("open_questions", []), ensure_ascii=False),
+            project_root=state.get("project_root", ""),
+            source_note_ids=json.dumps(state.get("source_note_ids", []), ensure_ascii=False),
+            internal_memory_summary=state.get("analysis", "")[:1000],
+            user_answer_summary=answer[:1000],
+            confidence="medium" if state.get("related_paths") else "low",
         )
     )
     return {"research_note_id": note_id}

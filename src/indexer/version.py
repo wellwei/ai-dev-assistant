@@ -1,0 +1,1 @@
+CURRENT_INDEXER_VERSION = "2026-07-02.provenance-v1"

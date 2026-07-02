@@ -64,3 +64,6 @@ int query_resource(Context* ctx) {
     assert "side effects" in summary.evidence
     assert "comment_mismatch" in summary.inconsistencies
     assert summary.confidence == "medium"
+    assert "query_resource" in summary.evidence_spans
+    assert summary.confidence_score < 0.7
+    assert "consistency flags reduce trust" in summary.confidence_reasons

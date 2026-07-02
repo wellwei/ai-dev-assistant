@@ -6,6 +6,7 @@ from src.indexer.models import ConsistencyFlag, FileSummary, ProjectFile, Symbol
 from src.indexer.scanner import scan_project
 from src.indexer.summarizer import summarize_implementation
 from src.indexer.symbol_extractor import extract_symbols
+from src.indexer.version import CURRENT_INDEXER_VERSION
 from src.state import IndexState
 from src.storage.project_index import ProjectIndexRepository
 
@@ -19,7 +20,7 @@ def _repo(state: IndexState, default_repo: ProjectIndexRepository | None = None)
 def scan_project_node(state: IndexState, repo: ProjectIndexRepository | None = None) -> dict:
     project_root = state.get("project_root") or settings.TARGET_PROJECT_ROOT
     repository = _repo(state, repo)
-    run_id = repository.start_run(project_root)
+    run_id = repository.start_run(project_root, CURRENT_INDEXER_VERSION)
     try:
         scanned = scan_project(project_root)
         repository.mark_deleted_missing_paths(file.path for file in scanned)
@@ -38,8 +39,7 @@ def detect_changed_files_node(state: IndexState, repo: ProjectIndexRepository | 
     repository = _repo(state, repo)
     changed: list[ProjectFile] = []
     for file in state.get("scanned_files", []):
-        existing = repository.get_file(file.path)
-        if existing is None or existing["content_hash"] != file.content_hash or existing["status"] != "active":
+        if repository.needs_reindex(file, CURRENT_INDEXER_VERSION):
             changed.append(file)
     return {"changed_files": changed}
 
@@ -64,6 +64,13 @@ def extract_symbols_node(state: IndexState) -> dict:
 
 def _symbols_for_path(symbols: list[SymbolInfo], path: str) -> list[SymbolInfo]:
     return [symbol for symbol in symbols if symbol.path == path]
+
+
+def _file_for_path(files: list[ProjectFile], path: str) -> ProjectFile | None:
+    for file in files:
+        if file.path == path:
+            return file
+    return None
 
 
 def detect_consistency_flags_node(state: IndexState) -> dict:
@@ -109,10 +116,28 @@ def write_index_node(state: IndexState, repo: ProjectIndexRepository | None = No
         for file in scanned:
             repository.upsert_file(file)
         for summary in summaries:
-            repository.upsert_summary(summary)
+            file = _file_for_path(changed, summary.path)
+            repository.upsert_summary(
+                summary,
+                content_hash=file.content_hash if file else "",
+                run_id=run_id,
+                indexer_version=CURRENT_INDEXER_VERSION,
+            )
         for file in changed:
-            repository.replace_symbols(file.path, _symbols_for_path(symbols, file.path))
-            repository.replace_consistency_flags(file.path, [flag for flag in flags if flag.path == file.path])
+            repository.replace_symbols(
+                file.path,
+                _symbols_for_path(symbols, file.path),
+                content_hash=file.content_hash,
+                run_id=run_id,
+                indexer_version=CURRENT_INDEXER_VERSION,
+            )
+            repository.replace_consistency_flags(
+                file.path,
+                [flag for flag in flags if flag.path == file.path],
+                content_hash=file.content_hash,
+                run_id=run_id,
+                indexer_version=CURRENT_INDEXER_VERSION,
+            )
         status = "partial_success" if errors else "success"
         if run_id is not None:
             repository.finish_run(run_id, status, len(scanned), len(changed), len(summaries), "\n".join(errors) or None)

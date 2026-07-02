@@ -1,3 +1,4 @@
+import hashlib
 import re
 
 from src.indexer.models import SymbolInfo
@@ -25,6 +26,28 @@ def _line_number(content: str, offset: int) -> int:
     return content.count("\n", 0, offset) + 1
 
 
+def _find_block_end(content: str, open_brace_offset: int) -> int:
+    depth = 0
+    for index in range(open_brace_offset, len(content)):
+        char = content[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return min(len(content), open_brace_offset + 1200)
+
+
+def _body_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _preview(text: str, limit: int = 400) -> str:
+    compact = text.strip()
+    return compact[:limit]
+
+
 def detect_side_effects(content: str) -> str:
     lowered = content.lower()
     found: list[str] = []
@@ -45,7 +68,15 @@ def _add_matches(path: str, content: str, regex: re.Pattern[str], symbol_type: s
         name = match.group(1).split("::")[-1]
         signature = match.group(0).strip().split("{")[0].strip()
         line_start = _line_number(content, match.start())
-        window = content[match.start() : match.start() + 1200]
+        open_brace_offset = content.find("{", match.start(), min(len(content), match.end() + 2))
+        if open_brace_offset == -1:
+            end_offset = match.end()
+        elif symbol_type == "macro":
+            end_offset = match.end()
+        else:
+            end_offset = _find_block_end(content, open_brace_offset)
+        line_end = _line_number(content, end_offset)
+        window = content[match.start() : min(len(content), end_offset + 1)]
         side_effects = detect_side_effects(window)
         symbols.append(
             SymbolInfo(
@@ -54,11 +85,13 @@ def _add_matches(path: str, content: str, regex: re.Pattern[str], symbol_type: s
                 name=name,
                 signature=signature,
                 line_start=line_start,
-                line_end=None,
+                line_end=line_end,
                 summary=_symbol_summary(symbol_type, name, side_effects),
                 observed_behavior="Potential behavior inferred from implementation text; verify against full code before editing.",
                 side_effects=side_effects,
                 confidence="medium" if side_effects else "low",
+                body_hash=_body_hash(window),
+                evidence_preview=_preview(window),
             )
         )
 

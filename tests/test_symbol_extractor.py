@@ -32,9 +32,13 @@ def test_extract_symbols_finds_macros_structs_classes_and_functions():
 
     query = next(s for s in symbols if s.name == "query_route" and s.symbol_type == "function")
     assert query.line_start > 0
+    assert query.line_end == 17
     assert "query_route" in query.signature
     assert "state_write" in query.side_effects
     assert "network_send" in query.side_effects
+    assert query.body_hash
+    assert "ctx->state = 1" in query.evidence_preview
+    assert len(query.evidence_preview) <= 400
 
 
 def test_detect_side_effects_reports_state_and_network_writes():

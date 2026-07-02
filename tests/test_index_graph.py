@@ -56,6 +56,25 @@ def test_index_graph_skips_unchanged_files_on_second_run(tmp_path):
     assert len(first["changed_files"]) == 1
     assert len(second["changed_files"]) == 0
 
+
+def test_index_graph_reindexes_when_artifact_indexer_version_is_stale(tmp_path):
+    project = tmp_path / "doll_escort_game_svr"
+    (project / "src").mkdir(parents=True)
+    (project / "src/a.cpp").write_text("int a() { return 1; }", encoding="utf-8")
+
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    graph = create_index_graph(repo)
+
+    first = graph.invoke({"project_root": str(project), "index_db_path": str(db_path)})
+    with connect_db(db_path) as conn:
+        conn.execute("UPDATE file_summaries SET indexer_version = ? WHERE path = ?", ("stale-version", "src/a.cpp"))
+        conn.commit()
+    second = graph.invoke({"project_root": str(project), "index_db_path": str(db_path)})
+
+    assert len(first["changed_files"]) == 1
+    assert len(second["changed_files"]) == 1
+
 from langgraph.checkpoint.memory import InMemorySaver
 
 from src.assistant_graph import create_assistant_graph
