@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+.venv/
+
+# Environment and local runtime state
+.env
+.env.*
+!.env.example
+.langgraph_api/
+checkpoints/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Worktrees and local scratch
+.worktrees/
+.superpowers/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
