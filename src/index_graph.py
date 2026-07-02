@@ -14,15 +14,16 @@ from src.storage.project_index import ProjectIndexRepository
 
 
 def create_index_graph(repo: ProjectIndexRepository | None = None):
+    repository = repo if isinstance(repo, ProjectIndexRepository) else None
     builder = StateGraph(IndexState)
 
-    builder.add_node("scan_project", lambda state: scan_project_node(state, repo))
-    builder.add_node("detect_changed_files", lambda state: detect_changed_files_node(state, repo))
+    builder.add_node("scan_project", lambda state: scan_project_node(state, repository))
+    builder.add_node("detect_changed_files", lambda state: detect_changed_files_node(state, repository))
     builder.add_node("classify_files", classify_files_node)
     builder.add_node("extract_symbols", extract_symbols_node)
     builder.add_node("detect_consistency_flags", detect_consistency_flags_node)
     builder.add_node("summarize_implementation", summarize_implementation_node)
-    builder.add_node("write_index", lambda state: write_index_node(state, repo))
+    builder.add_node("write_index", lambda state: write_index_node(state, repository))
 
     builder.add_edge(START, "scan_project")
     builder.add_edge("scan_project", "detect_changed_files")

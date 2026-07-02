@@ -98,3 +98,16 @@ int query_route(Context* ctx) {
     assert "src/map_data/sea_route.cpp" in answer["answer"]
     assert "置信度" in answer["answer"]
     assert "注释" in answer["answer"] or "命名" in answer["answer"]
+
+
+def test_create_index_graph_ignores_langgraph_factory_config_dict(tmp_path):
+    project = tmp_path / "doll_escort_game_svr"
+    (project / "src").mkdir(parents=True)
+    (project / "src/a.cpp").write_text("int a() { return 1; }", encoding="utf-8")
+    db_path = tmp_path / "project_index.sqlite"
+
+    app = create_index_graph({})
+    result = app.invoke({"project_root": str(project), "index_db_path": str(db_path)})
+
+    assert type(app).__name__ == "CompiledStateGraph"
+    assert result["run_status"] == "success"
