@@ -31,3 +31,36 @@ int get_route(Context* ctx) {
     flags = detect_consistency_flags("src/route.cpp", content, symbols)
 
     assert any(flag.flag_type == "comment_mismatch" for flag in flags)
+
+from src.indexer.models import ProjectFile
+from src.indexer.summarizer import summarize_implementation
+
+
+def test_summarize_implementation_prioritizes_behavior_and_reports_confidence():
+    content = """
+// query only
+int query_resource(Context* ctx) {
+    ctx->mutable_resource()->set_state(1);
+    broadcast_resource(ctx);
+    return 0;
+}
+"""
+    project_file = ProjectFile(
+        path="src/resource.cpp",
+        abs_path="/tmp/project/src/resource.cpp",
+        file_type="source",
+        language="cpp",
+        size_bytes=len(content),
+        mtime=1.0,
+        content_hash="hash",
+    )
+    symbols = extract_symbols(project_file.path, content)
+    flags = detect_consistency_flags(project_file.path, content, symbols)
+
+    summary = summarize_implementation(project_file, content, symbols, flags)
+
+    assert "source" in summary.summary
+    assert "query_resource" in summary.key_points
+    assert "side effects" in summary.evidence
+    assert "comment_mismatch" in summary.inconsistencies
+    assert summary.confidence == "medium"

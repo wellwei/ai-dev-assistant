@@ -15,6 +15,8 @@ NO_WRITE_COMMENT_MARKERS = (
     "no write",
     "readonly",
     "read only",
+    "only query",
+    "query only",
     "只读",
     "不修改",
     "不写",
