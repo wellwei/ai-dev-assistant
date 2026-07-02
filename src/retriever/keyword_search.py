@@ -5,7 +5,20 @@ from src.storage.sqlite import connect_db, init_schema
 
 
 def _tokens(query: str) -> list[str]:
-    return [token.lower() for token in re.findall(r"[\w一-鿿]+", query) if token.strip()]
+    raw_tokens = [token.lower() for token in re.findall(r"[\w一-鿿]+", query) if token.strip()]
+    expanded = list(raw_tokens)
+    synonym_map = {
+        "路线": ["route"],
+        "重算": ["recalc", "recalculation"],
+        "押镖": ["escort"],
+        "地图": ["map"],
+        "资源": ["resource"],
+    }
+    for token in raw_tokens:
+        for key, synonyms in synonym_map.items():
+            if key in token:
+                expanded.extend(synonyms)
+    return expanded
 
 
 def _score(row: dict, tokens: list[str]) -> int:

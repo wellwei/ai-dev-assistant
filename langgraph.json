@@ -3,7 +3,8 @@
     "."
   ],
   "graphs": {
-    "agent": "./src/graph.py:create_graph"
+    "assistant": "./src/graph.py:create_graph",
+    "indexer": "./src/index_graph.py:create_index_graph"
   },
   "env": ".env"
 }
