@@ -28,9 +28,9 @@
 
 - 不直接自动修改 `doll_escort_game_svr`。
 - 不自动提交、推送、发布。
-- 不引入向量检索或 embedding。
+- 不依赖外部 embedding 服务或外部 vector store；真实 embedding provider 需单独设计和审批。
 - 不实现完整 C++ AST 解析。
-- 不引入 Deep Agents 或 Hermes Agent 作为首期核心运行时。
+- 不引入 Deep Agents 或 Hermes Agent 作为核心运行时；2026-07-03 起不再继续 Hermes Agent 引入尝试。
 - 不把文档和注释当成权威事实。
 
 ## 核心原则
@@ -582,7 +582,7 @@ venv/
 
 ### 阶段 3：向量检索
 
-在 SQLite 关键词检索基础上加入 embedding 或外部 vector store，用于模糊语义问题。可新增 `embeddings` 表或接入 Chroma、FAISS、LanceDB 等。
+在 SQLite 关键词检索基础上加入 embedding 能力，用于模糊语义问题。当前已有本地 deterministic embedding 和 `embeddings` 表作为可替换边界；后续如需接入真实本地模型或外部 vector store，应先完成评估、审批和回归测试。候选外部方案包括 Chroma、FAISS、LanceDB 等。
 
 ### 阶段 4：开发任务生命周期记录
 
@@ -594,26 +594,42 @@ venv/
 - `approvals`
 - `verification_runs`
 
-### 阶段 5：Deep Agents / Hermes Agent 演进
+### 阶段 5：自研项目记忆层
 
-稳定迭代期后，将部分 Worker 节点替换为 Hermes Agent，获得自改进能力。候选节点：
+放弃后续 Hermes Agent 引入尝试。自改进和长期记忆能力改由项目内自研记忆层承担，优先围绕现有 SQLite 索引、research notes、embedding 表、confidence metadata 和 improvement proposals 演进。
 
-- `summarize_implementation`
-- `detect_consistency_flags`
-- `analyze_request`
+候选能力：
 
-预期能力：
+- 记忆反思：定期整理历史调研、失败召回、低置信结论和用户修正。
+- 记忆分层：区分当前索引证据、历史助手结论、用户确认事实、待验证假设和废弃结论。
+- 记忆可信度：记录来源、证据跨度、生成时间、适用范围、置信度和过期原因。
+- 记忆复用：在 QA、需求调研、开发建议和后续评估中召回项目经验。
+- 自改进提案：继续保持 proposal-only，不自动修改行为；所有策略变更必须经过用户审批和测试验证。
 
-- 自动反思摘要质量。
-- 根据新问题修正旧索引。
-- 记录成功和失败调研经验。
-- 发现过时文档和命名误导。
-- 沉淀项目专属开发经验。
+### 阶段 6：Codex / Claude Code 集成
 
-Hermes Agent 不进入首期实现，仅作为后期架构预留。
+将本项目包装成可被 Codex、Claude Code 等开发 agent 稳定使用的项目记忆助手。
+
+候选能力：
+
+- 根目录 `README.md` 作为通用 agent 入口。
+- 可选 `AGENTS.md`、`CLAUDE.md` 指针文件，指向同一规范、历史记录和安全边界。
+- 面向 agent 的只读调研、上下文导出、建议补丁、验证计划和审批交接格式。
+- 明确 Codex/Claude Code 与本助手之间的职责分界：外部 agent 可执行开发动作，本助手负责项目记忆、证据检索、风险解释和审批前建议。
+
+### 阶段 7：Docker 部署与 skill 能力
+
+在本地使用稳定后，补充可复现部署和可复用 skill 形态。
+
+候选能力：
+
+- Dockerfile / docker-compose，支持挂载 checkpoint、project index 和配置。
+- 健康检查、初始化索引命令、只读目标项目挂载和日志目录。
+- Codex skill 形态：使用 `SKILL.md` 和可选 `references/`，把本 README、设计原则和常用工作流浓缩成可触发能力。
+- skill 不直接携带大索引或公司项目内容；项目数据继续通过本地挂载、SQLite 和显式配置获得。
 
 ## Implementation Status
 
 Initial implementation completed when the corresponding plan at `docs/superpowers/plans/2026-07-02-langgraph-project-knowledge-assistant.md` passes the full test suite and the read-only real-project indexing smoke test. The target C++ project remains read-only unless the user explicitly approves stronger actions.
 
-Development history is tracked in `docs/superpowers/history/2026-07-02-development-history.md`. Every future implementation or behavior change must append an entry there before the task is considered complete.
+Development history is tracked in dated files under `docs/superpowers/history/`. Every future implementation or behavior change must append an entry there before the task is considered complete.

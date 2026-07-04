@@ -255,6 +255,289 @@ def test_search_project_index_applies_escort_domain_intent_boosts(tmp_path):
     assert client_query[0]["path"] == "src/task/tcp/process_cli_query_second_route_tcp_task.cpp"
 
 
+def test_route_recalc_intent_does_not_promote_client_query_path(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+
+    candidates = [
+        (
+            "src/task/tcp/process_cli_query_second_route_tcp_task.cpp",
+            "client second route query task",
+            "query_second_route route",
+            "network_send",
+            6,
+        ),
+        (
+            "src/task/work/cal_cross_map_route_cost_time_complex_task.cpp",
+            "cross map route cost recalculation",
+            "route recalc cost",
+            "state_write",
+            2,
+        ),
+        (
+            "src/task/tcp/process_recalc_route_task.cpp",
+            "route recalculation task",
+            "process recalc route",
+            "state_write",
+            2,
+        ),
+    ]
+    for path, summary, key_points, side_effects, symbol_count in candidates:
+        repo.upsert_file(ProjectFile(path, f"/tmp/{path}", "source", "cpp", 10, 1.0, f"hash-{path}"))
+        repo.upsert_summary(
+            FileSummary(
+                path=path,
+                summary=summary,
+                responsibilities=summary,
+                key_points=key_points,
+                dependencies="route, map",
+                risks="verify implementation",
+                evidence=f"symbol scan; side effects: {side_effects}",
+                inconsistencies="none",
+                confidence="medium",
+                confidence_score=0.6,
+            )
+        )
+        repo.replace_symbols(
+            path,
+            [
+                SymbolInfo(
+                    path=path,
+                    symbol_type="function",
+                    name=f"{key_points.replace(' ', '_')}_{idx}",
+                    signature="int handler(Context*)",
+                    line_start=idx,
+                    line_end=idx + 1,
+                    summary=summary,
+                    observed_behavior=summary,
+                    side_effects=side_effects,
+                    confidence="medium",
+                )
+                for idx in range(symbol_count)
+            ],
+        )
+
+    recalc = search_project_index(db_path, "押镖 route 重算 风险", limit=5)
+    recalc_paths = [item["path"] for item in recalc]
+    client_query = search_project_index(db_path, "客户端 查询 二段路线", limit=5)
+
+    assert recalc_paths.index("src/task/work/cal_cross_map_route_cost_time_complex_task.cpp") < recalc_paths.index(
+        "src/task/tcp/process_cli_query_second_route_tcp_task.cpp"
+    )
+    assert recalc_paths.index("src/task/tcp/process_recalc_route_task.cpp") < recalc_paths.index(
+        "src/task/tcp/process_cli_query_second_route_tcp_task.cpp"
+    )
+    assert client_query[0]["path"] == "src/task/tcp/process_cli_query_second_route_tcp_task.cpp"
+
+
+def test_movement_state_terms_promote_escort_car_move_logic(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+
+    candidates = [
+        (
+            "src/rtb_proc/escort_car/rtb_proc_escort_car.cpp",
+            "escort car generic runtime handler",
+            "escort car status attach",
+            "state_write",
+            6,
+        ),
+        (
+            "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp",
+            "escort car movement state handler",
+            "escort car move stop sync position",
+            "state_write",
+            2,
+        ),
+        (
+            "src/rtb_proc/escort_car/rtb_proc_escort_def.h",
+            "escort car status macros",
+            "car move stop route macros",
+            "",
+            8,
+        ),
+    ]
+    for path, summary, key_points, side_effects, symbol_count in candidates:
+        repo.upsert_file(ProjectFile(path, f"/tmp/{path}", "source", "cpp", 10, 1.0, f"hash-{path}"))
+        repo.upsert_summary(
+            FileSummary(
+                path=path,
+                summary=summary,
+                responsibilities=summary,
+                key_points=key_points,
+                dependencies="escort, route, status",
+                risks="verify implementation",
+                evidence=f"symbol scan; side effects: {side_effects}",
+                inconsistencies="none",
+                confidence="medium",
+                confidence_score=0.6,
+            )
+        )
+        repo.replace_symbols(
+            path,
+            [
+                SymbolInfo(
+                    path=path,
+                    symbol_type="function",
+                    name=f"{key_points.replace(' ', '_')}_{idx}",
+                    signature="int handler(Context*)",
+                    line_start=idx,
+                    line_end=idx + 1,
+                    summary=summary,
+                    observed_behavior=summary,
+                    side_effects=side_effects,
+                    confidence="medium",
+                )
+                for idx in range(symbol_count)
+            ],
+        )
+
+    results = search_project_index(db_path, "押镖车 位置 同步 停止 异常", limit=5)
+
+    assert results[0]["path"] == "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp"
+    assert "movement" in results[0]["ranking_reason"]
+
+
+def test_second_route_sync_prefers_movement_logic_over_client_tcp_handlers(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+
+    candidates = [
+        (
+            "src/task/tcp/process_undo_escort_car_vertigo_tcp_task.cpp",
+            "escort car tcp status handler",
+            "escort tcp status",
+            "network_send",
+            6,
+        ),
+        (
+            "src/task/tcp/process_cli_query_second_route_tcp_task.cpp",
+            "client second route query task",
+            "query second route",
+            "network_send",
+            4,
+        ),
+        (
+            "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp",
+            "escort car movement synchronizes second route jump points",
+            "sync second route jump route movement",
+            "state_write",
+            2,
+        ),
+    ]
+    for path, summary, key_points, side_effects, symbol_count in candidates:
+        repo.upsert_file(ProjectFile(path, f"/tmp/{path}", "source", "cpp", 10, 1.0, f"hash-{path}"))
+        repo.upsert_summary(
+            FileSummary(
+                path=path,
+                summary=summary,
+                responsibilities=summary,
+                key_points=key_points,
+                dependencies="escort, route, sync",
+                risks="verify implementation",
+                evidence=f"symbol scan; side effects: {side_effects}",
+                inconsistencies="none",
+                confidence="medium",
+                confidence_score=0.6,
+            )
+        )
+        repo.replace_symbols(
+            path,
+            [
+                SymbolInfo(
+                    path=path,
+                    symbol_type="function",
+                    name=f"{key_points.replace(' ', '_')}_{idx}",
+                    signature="int handler(Context*)",
+                    line_start=idx,
+                    line_end=idx + 1,
+                    summary=summary,
+                    observed_behavior=summary,
+                    side_effects=side_effects,
+                    confidence="medium",
+                )
+                for idx in range(symbol_count)
+            ],
+        )
+
+    sync_results = search_project_index(db_path, "押镖车 同步 二段路线 跳跃点", limit=5)
+    client_results = search_project_index(db_path, "客户端 查询 二段路线", limit=5)
+
+    assert sync_results[0]["path"] == "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp"
+    assert "client_route_query" not in sync_results[0]["ranking_reason"]
+    assert not any(
+        item["path"] == "src/task/tcp/process_undo_escort_car_vertigo_tcp_task.cpp"
+        and "client_route_query" in item["ranking_reason"]
+        for item in sync_results
+    )
+    assert client_results[0]["path"] == "src/task/tcp/process_cli_query_second_route_tcp_task.cpp"
+
+
+def test_sport_status_change_terms_promote_movement_logic(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+
+    candidates = [
+        (
+            "src/rtb_proc/escort_car/rtb_proc_escort_car.cpp",
+            "escort car generic runtime handler",
+            "escort car attach status",
+            "state_write",
+            6,
+        ),
+        (
+            "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp",
+            "escort car movement updates sport_status and change reason logs",
+            "sport_status chg_reason movement log",
+            "state_write",
+            2,
+        ),
+    ]
+    for path, summary, key_points, side_effects, symbol_count in candidates:
+        repo.upsert_file(ProjectFile(path, f"/tmp/{path}", "source", "cpp", 10, 1.0, f"hash-{path}"))
+        repo.upsert_summary(
+            FileSummary(
+                path=path,
+                summary=summary,
+                responsibilities=summary,
+                key_points=key_points,
+                dependencies="escort, status",
+                risks="verify implementation",
+                evidence=f"symbol scan; side effects: {side_effects}",
+                inconsistencies="none",
+                confidence="medium",
+                confidence_score=0.6,
+            )
+        )
+        repo.replace_symbols(
+            path,
+            [
+                SymbolInfo(
+                    path=path,
+                    symbol_type="function",
+                    name=f"{key_points.replace(' ', '_')}_{idx}",
+                    signature="int handler(Context*)",
+                    line_start=idx,
+                    line_end=idx + 1,
+                    summary=summary,
+                    observed_behavior=summary,
+                    side_effects=side_effects,
+                    confidence="medium",
+                )
+                for idx in range(symbol_count)
+            ],
+        )
+
+    results = search_project_index(db_path, "押镖车 sport_status 变化 原因 日志", limit=5)
+
+    assert results[0]["path"] == "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp"
+    assert "movement" in results[0]["ranking_reason"]
+
+
 def test_search_project_index_ignores_symbols_for_deleted_files(tmp_path):
     db_path = tmp_path / "project_index.sqlite"
     repo = ProjectIndexRepository(db_path)

@@ -2,6 +2,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from src.assistant_graph import create_assistant_graph
 from src.indexer.models import FileSummary, ProjectFile
+from src.retriever.vector_search import upsert_embedding
 from src.storage.project_index import ProjectIndexRepository
 from src.storage.sqlite import connect_db
 
@@ -52,6 +53,107 @@ def test_assistant_graph_answers_project_question_and_persists_note(tmp_path):
 
     with connect_db(db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM research_notes").fetchone()[0] == 1
+
+
+def test_assistant_graph_uses_hybrid_vector_context_when_keyword_has_no_match(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = _seed_repo(db_path)
+    upsert_embedding(
+        db_path,
+        source_type="file_summary",
+        source_id="src/vector_only.cpp",
+        source_path="src/vector_only.cpp",
+        source_hash="hash-vector",
+        text="nebula_anchor semantic_vector",
+    )
+    graph = create_assistant_graph(repo=repo, checkpointer=InMemorySaver())
+
+    result = graph.invoke(
+        {
+            "question": "nebula_anchor semantic_vector",
+            "project_root": "/tmp/project",
+            "index_db_path": str(db_path),
+            "thread_id": "thread-hybrid-vector",
+        },
+        {"configurable": {"thread_id": "thread-hybrid-vector"}},
+    )
+
+    assert result["retrieved_context"][0]["path"] == "src/vector_only.cpp"
+    assert result["retrieved_context"][0]["evidence"] == "vector semantic match"
+    assert result["retrieved_context"][0]["vector_score"] > 0
+    assert result["related_paths"] == ["src/vector_only.cpp"]
+    assert "src/vector_only.cpp" in result["answer"]
+
+
+def test_assistant_graph_falls_back_to_keyword_search_when_hybrid_fails(tmp_path, monkeypatch):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = _seed_repo(db_path)
+
+    def fail_hybrid(*args, **kwargs):
+        raise RuntimeError("hybrid unavailable")
+
+    monkeypatch.setattr("src.nodes.assistant_nodes.hybrid_search_project", fail_hybrid)
+    graph = create_assistant_graph(repo=repo, checkpointer=InMemorySaver())
+
+    result = graph.invoke(
+        {
+            "question": "押镖 route 重算在哪里？",
+            "project_root": "/tmp/project",
+            "index_db_path": str(db_path),
+            "thread_id": "thread-hybrid-fallback",
+        },
+        {"configurable": {"thread_id": "thread-hybrid-fallback"}},
+    )
+
+    assert result["retrieved_context"][0]["path"] == "src/route.cpp"
+    assert "src/route.cpp" in result["answer"]
+
+
+def test_assistant_graph_answer_surfaces_key_symbols_for_movement_context(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    repo.upsert_file(
+        ProjectFile(
+            "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp",
+            "/tmp/src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp",
+            "source",
+            "cpp",
+            10,
+            1,
+            "hash-move",
+        )
+    )
+    repo.upsert_summary(
+        FileSummary(
+            path="src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp",
+            summary="Handles escort car movement stop and status transitions.",
+            responsibilities="escort car movement",
+            key_points="escort_car_move6, stop_escort_car_outside_conditions, calc_escort_car_sport_result",
+            dependencies="escort, route",
+            risks="verify frame side effects",
+            evidence="symbol scan; side effects: state_write",
+            inconsistencies="none",
+            confidence="medium",
+        )
+    )
+    graph = create_assistant_graph(repo=repo, checkpointer=InMemorySaver())
+
+    result = graph.invoke(
+        {
+            "question": "押镖车 离线 死亡 上马 停止",
+            "project_root": "/tmp/project",
+            "index_db_path": str(db_path),
+            "thread_id": "thread-movement-symbols",
+        },
+        {"configurable": {"thread_id": "thread-movement-symbols"}},
+    )
+
+    assert "关键函数/符号" in result["answer"]
+    assert "escort_car_move6" in result["answer"]
+    assert "stop_escort_car_outside_conditions" in result["answer"]
+    assert "calc_escort_car_sport_result" in result["answer"]
+    assert "Key points:" not in result["answer"]
 
 
 def test_assistant_graph_classifies_development_advice(tmp_path):

@@ -6,6 +6,8 @@
 
 **Architecture:** Keep two graph flows: `index_graph` builds and refreshes a SQLite project knowledge index; `assistant_graph` classifies user requests, retrieves indexed context, synthesizes Chinese answers, and persists reusable research notes. Use SQLite checkpointer for LangGraph thread persistence and a separate SQLite project-index database for files, summaries, symbols, consistency flags, and research notes.
 
+**Route Update (2026-07-03):** Do not continue Hermes Agent introduction work. Future memory and self-improvement work should use a self-developed project memory layer, with later Codex/Claude Code integration, Docker deployment, and skill capability.
+
 **Tech Stack:** Python 3.10+, LangChain 1.x, LangGraph 1.x, `langchain-openai`, `langgraph-checkpoint-sqlite`, SQLite, pytest.
 
 ## Global Constraints
@@ -18,7 +20,7 @@
 - Low-confidence conclusions must be labeled.
 - Do not store complete large file contents in graph state or SQLite checkpoints.
 - Use incremental indexing based on content hash; mtime is only a fast hint.
-- Do not add embedding/vector search, full C++ AST parsing, Deep Agents, or Hermes Agent in the first implementation.
+- Do not add full C++ AST parsing, Deep Agents, or Hermes Agent in the first implementation. Hermes Agent is no longer a future direction after the 2026-07-03 route update.
 - Existing target C++ git changes must not be touched.
 
 ---
@@ -2674,6 +2676,6 @@ git commit -m "test: add project assistant integration smoke test"
 ## Self-Review Notes
 
 - Spec coverage: The plan covers SQLite checkpointer, separate project-index SQLite DB, project scanner, incremental content-hash indexing, file summaries, symbols, consistency flags, retriever, assistant graph, research note persistence, target C++ read-only boundary, and old C++ comment/name mismatch risk.
-- Scope held: Vector retrieval, full AST parsing, Deep Agents, and Hermes Agent are not implemented in this plan and remain in the spec's evolution route.
+- Scope held: Full AST parsing and Deep Agents are not implemented in this plan. Hermes Agent is not implemented and no longer remains in the evolution route after the 2026-07-03 route update; future memory work moves to the self-developed project memory layer.
 - Placeholder scan: This plan contains no intentionally unresolved implementation placeholders. Every task includes concrete file paths, test code, implementation code, commands, and expected outcomes.
 - Type consistency: Dataclasses in `src/indexer/models.py`, state keys in `src/state.py`, repository method names in `src/storage/project_index.py`, and graph node names are used consistently across tasks.

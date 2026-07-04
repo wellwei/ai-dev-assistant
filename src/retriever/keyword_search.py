@@ -9,9 +9,28 @@ def _tokens(query: str) -> list[str]:
     expanded = list(raw_tokens)
     synonym_map = {
         "路线": ["route"],
+        "移动": ["move", "movement"],
+        "跟随": ["follow"],
         "重算": ["recalc", "recalculation"],
         "押镖": ["escort"],
         "地图": ["map"],
+        "位置": ["position", "pos", "curr_pos"],
+        "坐标": ["position", "pos", "curr_pos"],
+        "同步": ["sync"],
+        "停止": ["stop"],
+        "异常": ["outside", "status"],
+        "跳跃": ["jump", "skip"],
+        "超时": ["timeout"],
+        "迁移": ["migration"],
+        "离线": ["offline"],
+        "死亡": ["dead"],
+        "上马": ["mounting"],
+        "速度": ["speed"],
+        "距离": ["distance"],
+        "半径": ["radius"],
+        "变化": ["change", "chg"],
+        "原因": ["reason"],
+        "日志": ["log"],
         "资源": ["resource"],
     }
     for token in raw_tokens:
@@ -56,13 +75,52 @@ def _path_token_boost(path: str, tokens: list[str]) -> tuple[float, list[str]]:
 def _escort_domain_intents(query: str) -> set[str]:
     lowered = query.lower()
     intents: set[str] = set()
-    if any(word in lowered for word in ["移动", "move", "follow"]):
+    has_escort_context = any(word in lowered for word in ["押镖", "镖车", "escort"])
+    direct_movement_terms = ["移动", "move", "follow", "跟随"]
+    escort_movement_state_terms = [
+        "位置",
+        "坐标",
+        "同步",
+        "停止",
+        "异常",
+        "跳跃",
+        "超时",
+        "迁移",
+        "离线",
+        "死亡",
+        "上马",
+        "速度",
+        "距离",
+        "半径",
+        "变化",
+        "原因",
+        "日志",
+        "position",
+        "pos",
+        "sync",
+        "stop",
+        "sport_status",
+        "chg_reason",
+        "timeout",
+        "migration",
+        "offline",
+        "dead",
+        "mount",
+        "speed",
+        "distance",
+        "radius",
+        "jump",
+        "skip",
+    ]
+    if any(word in lowered for word in direct_movement_terms) or (
+        has_escort_context and any(word in lowered for word in escort_movement_state_terms)
+    ):
         intents.add("movement")
     if any(word in lowered for word in ["海路", "地图", "map", "sea_route", "sea route"]):
         intents.add("sea_route")
     if any(word in lowered for word in ["重算", "recalc", "cost", "耗时"]):
         intents.add("route_recalc")
-    if any(word in lowered for word in ["客户端", "查询", "二段", "query", "second route"]):
+    if any(word in lowered for word in ["客户端", "查询", "query", "second route"]):
         intents.add("client_route_query")
     if any(word in lowered for word in ["押镖", "escort"]):
         intents.add("escort")
@@ -84,9 +142,7 @@ def _escort_domain_boost(path: str, query: str) -> tuple[float, list[str]]:
     if "sea_route" in intents and any(part in lowered_path for part in ["sea_route", "map_data"]):
         boost += 70.0
         matched.append("sea_route")
-    if "route_recalc" in intents and any(
-        part in lowered_path for part in ["recalc_rout", "recalc_route", "cal_cross_map_route_cost", "query_second_route"]
-    ):
+    if "route_recalc" in intents and any(part in lowered_path for part in ["recalc_rout", "recalc_route", "cal_cross_map_route_cost"]):
         boost += 58.0
         matched.append("route_recalc")
     if "client_route_query" in intents and any(part in lowered_path for part in ["process_cli_query_second_route", "/tcp/"]):

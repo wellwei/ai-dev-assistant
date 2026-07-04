@@ -3,6 +3,7 @@ import json
 from src.config import settings
 from src.indexer.models import ResearchNote
 from src.retriever.context_builder import build_context
+from src.retriever.hybrid_search import hybrid_search_project
 from src.retriever.keyword_search import search_project_index
 from src.retriever.research_memory import search_research_memory
 from src.state import AssistantState
@@ -64,7 +65,11 @@ def retrieve_research_memory_node(state: AssistantState, repo: ProjectIndexRepos
 
 def retrieve_project_context_node(state: AssistantState, repo: ProjectIndexRepository | None = None) -> dict:
     repository = _repo(state, repo)
-    results = search_project_index(repository.db_path, state.get("question", ""))
+    question = state.get("question", "")
+    try:
+        results = hybrid_search_project(repository.db_path, question)
+    except Exception:
+        results = search_project_index(repository.db_path, question)
     return {
         "retrieved_context": results,
         "related_paths": [item["path"] for item in results],
@@ -144,8 +149,38 @@ def _context_summary_for_user(results: list[dict]) -> list[str]:
         confidence = item.get("confidence") or "low"
         inconsistencies = item.get("inconsistencies") or "none"
         evidence = item.get("evidence") or "indexed summary"
-        lines.append(f"- `{path}`：索引命中；证据={evidence}；不一致标记={inconsistencies}；confidence={confidence}。")
+        key_symbols = _key_symbols_for_user(item)
+        symbol_text = f"；关键函数/符号={', '.join(f'`{name}`' for name in key_symbols)}" if key_symbols else ""
+        lines.append(
+            f"- `{path}`：索引命中{symbol_text}；证据={evidence}；不一致标记={inconsistencies}；confidence={confidence}。"
+        )
     return lines
+
+
+def _key_symbols_for_user(item: dict, limit: int = 6) -> list[str]:
+    ignored = {"", "if", "for", "while", "switch", "return"}
+    symbols: list[str] = []
+    seen: set[str] = set()
+
+    def add_symbol(raw_name: object) -> None:
+        name = str(raw_name or "").strip()
+        if not name or name.lower() in ignored or name in seen:
+            return
+        seen.add(name)
+        symbols.append(name)
+
+    for symbol in item.get("matched_symbols") or []:
+        add_symbol(symbol.get("name"))
+        if len(symbols) >= limit:
+            return symbols
+
+    key_points = str(item.get("key_points") or "")
+    for part in key_points.replace("\n", ",").replace(";", ",").split(","):
+        add_symbol(part)
+        if len(symbols) >= limit:
+            break
+
+    return symbols
 
 
 def _suggested_command_label(command: str) -> str:

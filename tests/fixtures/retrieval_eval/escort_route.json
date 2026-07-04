@@ -1,0 +1,40 @@
+[
+  {
+    "id": "escort_route_recalc_business_impl",
+    "query": "押镖 route 重算 风险",
+    "limit": 8,
+    "expected_paths": [
+      {"path": "src/task/work/cal_cross_map_route_cost_time_complex_task.cpp", "max_rank": 1},
+      {"path": "src/task/tcp/process_recalc_route_task.cpp", "max_rank": 3}
+    ],
+    "noise_paths": [
+      {"path": "CMakeLists.txt", "disallowed_above_rank": 3},
+      {"path": "linux_prj/route.ini", "disallowed_above_rank": 3},
+      {"path": "worker_task.AFCfile", "disallowed_above_rank": 3}
+    ]
+  },
+  {
+    "id": "escort_client_second_route_query",
+    "query": "客户端 查询 二段路线",
+    "limit": 8,
+    "expected_paths": [
+      {"path": "src/task/tcp/process_cli_query_second_route_tcp_task.cpp", "max_rank": 1}
+    ],
+    "noise_paths": [
+      {"path": "CMakeLists.txt", "disallowed_above_rank": 3},
+      {"path": "linux_prj/route.ini", "disallowed_above_rank": 3}
+    ]
+  },
+  {
+    "id": "escort_sea_route_map_data",
+    "query": "海路 地图 路线",
+    "limit": 8,
+    "expected_paths": [
+      {"path": "src/map_data/sea_route.cpp", "max_rank": 4}
+    ],
+    "noise_paths": [
+      {"path": "CMakeLists.txt", "disallowed_above_rank": 3},
+      {"path": "linux_prj/route.ini", "disallowed_above_rank": 3}
+    ]
+  }
+]

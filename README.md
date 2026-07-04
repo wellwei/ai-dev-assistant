@@ -16,14 +16,14 @@ Before making changes, agents should read these files in order:
 
 1. `README.md`
 2. `docs/superpowers/specs/2026-07-02-langgraph-project-knowledge-assistant-design.md`
-3. `docs/superpowers/history/2026-07-02-development-history.md`
+3. The latest dated file in `docs/superpowers/history/`
 4. `docs/superpowers/plans/2026-07-02-langgraph-project-knowledge-assistant.md` when executing or extending the implementation plan
 5. Relevant tests for the module being changed
 
 The development history is mandatory. Every code, design, behavior, retrieval ranking, schema, safety boundary, or documentation rule change must append an entry to:
 
 ```text
-docs/superpowers/history/2026-07-02-development-history.md
+docs/superpowers/history/YYYY-MM-DD-development-history.md
 ```
 
 ## Agent Rules
@@ -37,8 +37,9 @@ docs/superpowers/history/2026-07-02-development-history.md
 - Current implementation evidence outranks comments, documentation, names, and historical assistant memory.
 - Historical research notes are useful context, but they must be labeled as historical assistant conclusions and must not outrank current index evidence.
 - Development advice is read-only and approval-gated. Do not directly modify the target C++ project from this assistant.
-- Hermes integration is currently a no-op boundary. Real Hermes handoff must remain disabled unless explicitly designed and approved.
+- Do not continue Hermes Agent integration work. The existing Hermes no-op boundary is historical and disabled; keep it inert until an explicit cleanup removes it.
 - Self-improvement proposals must remain proposals until an explicit review and approval workflow exists.
+- Future memory and self-improvement work should use a self-developed project memory layer, not Hermes Agent.
 
 ## Project Structure
 
@@ -79,7 +80,7 @@ src/
     registry.py               # Skill-like read-only workflow registry
 
   integrations/
-    hermes.py                 # Safe Hermes no-op boundary
+    hermes.py                 # Deprecated disabled Hermes no-op boundary
 
   self_improvement/
     proposals.py              # Pending improvement proposal generation
@@ -189,6 +190,8 @@ Retrieval currently combines:
 - Local deterministic vector-like retrieval.
 - Prior research memory retrieval.
 
+The assistant's project-context retrieval path uses `hybrid_search_project()` first, with keyword retrieval as a conservative fallback if hybrid retrieval is unavailable.
+
 Ranking quality matters. When changing retrieval:
 
 - Add or update regression tests with realistic query/file examples.
@@ -196,6 +199,16 @@ Ranking quality matters. When changing retrieval:
 - Prefer current implementation evidence over historical notes.
 - Preserve `ranking_reason` or equivalent inspectability.
 - Record the change in development history.
+
+## Retrieval Evaluation
+
+Run retrieval evaluation before and after ranking, synonym, embedding, or memory-retrieval changes:
+
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph /Users/cltx/projects/langgraph/venv/bin/python /Users/cltx/projects/langgraph/scripts/run_retrieval_eval.py --db /Users/cltx/projects/langgraph/checkpoints/project_index.sqlite --cases /Users/cltx/projects/langgraph/tests/fixtures/retrieval_eval
+```
+
+Use the report to check that expected business implementation files remain near the top and config/build/noise files do not move ahead of them. If the real project index is stale or missing, ask the user before refreshing it.
 
 ## Schema and Migrations
 
@@ -220,7 +233,7 @@ PYTHONPATH=/Users/cltx/projects/langgraph /Users/cltx/projects/langgraph/venv/bi
 Expected current baseline:
 
 ```text
-45 passed
+61 passed
 ```
 
 For focused work, run the relevant test file first, then the full suite before final response.
@@ -232,7 +245,7 @@ Before finishing any change:
 1. Verify the code or docs that changed.
 2. Run focused tests when applicable.
 3. Run the full test suite before a completion claim.
-4. Append an entry to `docs/superpowers/history/2026-07-02-development-history.md`.
+4. Append an entry to the current dated file in `docs/superpowers/history/`.
 5. Include what changed, what functionality was completed or modified, affected files, verification, and follow-ups.
 
 ## Codex Skills and Claude Code Notes
@@ -258,6 +271,7 @@ Recommended next layers:
 1. Improve retrieval ranking with real query evaluation fixtures.
 2. Split the assistant into layered subgraphs: retrieval, QA, research, development advice, and memory reflection.
 3. Add real human-in-the-loop interrupts for approval-required workflows.
-4. Add reviewed self-improvement proposal lifecycle.
-5. Integrate a real embedding provider behind the existing embedding interface.
-6. Integrate Hermes only after an explicit approval-gated handoff protocol exists.
+4. Build the self-developed project memory layer: memory reflection, stale-memory demotion, proposal review, confidence tracking, and reusable project experience.
+5. Integrate Codex and Claude Code through shared agent instructions, optional `AGENTS.md`/`CLAUDE.md` pointer files, and explicit approval-aware handoff workflows.
+6. Add Docker deployment for repeatable local service startup, mounted SQLite/checkpoint storage, environment configuration, and health checks.
+7. Add skill capability with a concise `SKILL.md` and optional references so the assistant can be reused as an agent skill.

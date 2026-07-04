@@ -4,6 +4,14 @@ def build_context(results: list[dict]) -> str:
 
     sections: list[str] = []
     for item in results:
+        ranking_reason = item.get("ranking_reason") or ""
+        scores = []
+        if "hybrid_score" in item:
+            scores.append(f"hybrid_score={item.get('hybrid_score')}")
+        if "keyword_score" in item:
+            scores.append(f"keyword_score={item.get('keyword_score')}")
+        if "vector_score" in item:
+            scores.append(f"vector_score={item.get('vector_score')}")
         sections.append(
             "\n".join(
                 [
@@ -15,6 +23,8 @@ def build_context(results: list[dict]) -> str:
                     f"Risks: {item.get('risks') or ''}",
                     f"Evidence: {item.get('evidence') or ''}",
                     f"Inconsistencies: {item.get('inconsistencies') or ''}",
+                    f"Ranking reason: {ranking_reason}",
+                    f"Scores: {', '.join(scores)}",
                     f"confidence={item.get('confidence') or 'low'}",
                 ]
             )
