@@ -8,6 +8,7 @@ from src.indexer.models import (
     FileSummary,
     ImprovementProposal,
     ProjectFile,
+    ProjectMemory,
     ResearchNote,
     SymbolInfo,
 )
@@ -25,6 +26,9 @@ def _tokens(query: str) -> list[str]:
         "风险": ["risk"],
         "调研": ["research"],
         "记忆": ["memory"],
+        "移动": ["move", "movement"],
+        "查询": ["query"],
+        "二段": ["second route"],
     }
     for token in raw_tokens:
         for key, synonyms in synonym_map.items():
@@ -46,6 +50,15 @@ def _json_list(value: str | None) -> list:
     except json.JSONDecodeError:
         return []
     return parsed if isinstance(parsed, list) else []
+
+
+def _project_memory_item(row) -> dict:
+    item = dict(row)
+    item["source"] = "project_memory"
+    item["evidence_refs"] = _json_list(item.get("evidence_refs"))
+    item["related_paths"] = _json_list(item.get("related_paths"))
+    item["source_note_ids"] = _json_list(item.get("source_note_ids"))
+    return item
 
 
 class ProjectIndexRepository:
@@ -435,3 +448,115 @@ class ProjectIndexRepository:
             item["source_note_ids"] = _json_list(item.get("source_note_ids"))
             proposals.append(item)
         return proposals
+
+    def insert_project_memory(self, memory: ProjectMemory) -> int:
+        with connect_db(self.db_path) as conn:
+            init_schema(conn)
+            cur = conn.execute(
+                """
+                INSERT INTO project_memories(
+                    project_root, memory_type, subject, summary, evidence_refs,
+                    related_paths, source_note_ids, confidence, status,
+                    created_at, updated_at, flow_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), ?)
+                """,
+                (
+                    memory.project_root,
+                    memory.memory_type,
+                    memory.subject,
+                    memory.summary,
+                    memory.evidence_refs,
+                    memory.related_paths,
+                    memory.source_note_ids,
+                    memory.confidence,
+                    memory.status,
+                    memory.flow_version,
+                ),
+            )
+            conn.commit()
+            return int(cur.lastrowid)
+
+    def list_project_memories(
+        self,
+        *,
+        project_root: str = "",
+        memory_type: str | None = None,
+        status: str = "active",
+        limit: int = 20,
+    ) -> list[dict]:
+        clauses = []
+        params: list[str | int] = []
+        if project_root:
+            clauses.append("project_root = ?")
+            params.append(project_root)
+        if memory_type is not None:
+            clauses.append("memory_type = ?")
+            params.append(memory_type)
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(limit)
+        with connect_db(self.db_path) as conn:
+            init_schema(conn)
+            rows = conn.execute(
+                f"SELECT * FROM project_memories {where} ORDER BY updated_at DESC, id DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [_project_memory_item(row) for row in rows]
+
+    def search_project_memories(
+        self,
+        query: str,
+        *,
+        project_root: str = "",
+        memory_type: str | None = None,
+        status: str = "active",
+        limit: int = 5,
+    ) -> list[dict]:
+        tokens = _tokens(query)
+        if not tokens:
+            return []
+        clauses = []
+        params: list[str] = []
+        if project_root:
+            clauses.append("project_root = ?")
+            params.append(project_root)
+        if memory_type is not None:
+            clauses.append("memory_type = ?")
+            params.append(memory_type)
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        with connect_db(self.db_path) as conn:
+            init_schema(conn)
+            rows = conn.execute(
+                f"""
+                SELECT * FROM project_memories
+                {where}
+                ORDER BY updated_at DESC, id DESC
+                """,
+                params,
+            ).fetchall()
+        hits: list[dict] = []
+        for row in rows:
+            item = _project_memory_item(row)
+            item["score"] = _score(item, tokens)
+            if item["score"] <= 0:
+                continue
+            hits.append(item)
+        return sorted(hits, key=lambda item: item["score"], reverse=True)[:limit]
+
+    def update_project_memory_status(self, memory_id: int, status: str) -> None:
+        with connect_db(self.db_path) as conn:
+            init_schema(conn)
+            conn.execute(
+                """
+                UPDATE project_memories
+                SET status = ?, updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now')
+                WHERE id = ?
+                """,
+                (status, memory_id),
+            )
+            conn.commit()

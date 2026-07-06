@@ -68,6 +68,7 @@ src/
     vector_search.py          # Local vector-like search storage
     hybrid_search.py          # Hybrid retrieval orchestration
     research_memory.py        # Prior research note retrieval
+    project_memory.py         # Long-term project memory retrieval
     context_builder.py        # Context assembly
 
   storage/
@@ -148,7 +149,7 @@ result = graph.invoke({
 
 ### Assistant Graph
 
-Purpose: classify the user request, select a read-only workflow, retrieve prior research memory, retrieve current project context, analyze, synthesize a Chinese answer, and persist the research note.
+Purpose: classify the user request, select a read-only workflow, retrieve prior research memory, retrieve active long-term project memories, retrieve current project context, analyze, synthesize a Chinese answer, and persist the research note.
 
 Flow:
 
@@ -156,6 +157,7 @@ Flow:
 classify_request
   -> select_workflow
   -> retrieve_research_memory
+  -> retrieve_project_memories
   -> retrieve_project_context
   -> analyze_request
   -> synthesize_response
@@ -191,6 +193,13 @@ Retrieval currently combines:
 - Prior research memory retrieval.
 
 The assistant's project-context retrieval path uses `hybrid_search_project()` first, with keyword retrieval as a conservative fallback if hybrid retrieval is unavailable.
+
+Project memory uses two layers:
+
+- `research_notes` record individual assistant investigations and historical answers.
+- `project_memories` store curated long-term project knowledge such as domain concepts, implementation facts, risk notes, open questions, and retrieval lessons.
+
+Current implementation evidence still outranks project memories. Project memories are durable guidance, not source-of-truth replacements for indexed code evidence. Assistant answers may show matched `project_memories` in a separate `长期项目记忆` section, and may show `research_notes` separately as historical assistant memory. The assistant integration is read-only in this version: answers do not automatically generate, promote, update, or demote project memories.
 
 Ranking quality matters. When changing retrieval:
 
@@ -233,7 +242,7 @@ PYTHONPATH=/Users/cltx/projects/langgraph /Users/cltx/projects/langgraph/venv/bi
 Expected current baseline:
 
 ```text
-61 passed
+67 passed
 ```
 
 For focused work, run the relevant test file first, then the full suite before final response.

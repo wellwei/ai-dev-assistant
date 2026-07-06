@@ -6,6 +6,7 @@ from src.nodes.assistant_nodes import (
     ensure_flow_version_node,
     persist_research_note_node,
     retrieve_project_context_node,
+    retrieve_project_memories_node,
     retrieve_research_memory_node,
     select_workflow_node,
     synthesize_response_node,
@@ -22,6 +23,7 @@ def create_assistant_graph(repo: ProjectIndexRepository | None = None, checkpoin
     builder.add_node("classify_request", classify_request_node)
     builder.add_node("select_workflow", select_workflow_node)
     builder.add_node("retrieve_research_memory", lambda state: retrieve_research_memory_node(state, repository))
+    builder.add_node("retrieve_project_memories", lambda state: retrieve_project_memories_node(state, repository))
     builder.add_node("retrieve_project_context", lambda state: retrieve_project_context_node(state, repository))
     builder.add_node("analyze_request", analyze_request_node)
     builder.add_node("synthesize_response", synthesize_response_node)
@@ -31,7 +33,8 @@ def create_assistant_graph(repo: ProjectIndexRepository | None = None, checkpoin
     builder.add_edge("ensure_flow_version", "classify_request")
     builder.add_edge("classify_request", "select_workflow")
     builder.add_edge("select_workflow", "retrieve_research_memory")
-    builder.add_edge("retrieve_research_memory", "retrieve_project_context")
+    builder.add_edge("retrieve_research_memory", "retrieve_project_memories")
+    builder.add_edge("retrieve_project_memories", "retrieve_project_context")
     builder.add_edge("retrieve_project_context", "analyze_request")
     builder.add_edge("analyze_request", "synthesize_response")
     builder.add_edge("synthesize_response", "persist_research_note")

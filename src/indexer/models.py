@@ -85,3 +85,17 @@ class ImprovementProposal:
     risk: str
     status: str = "pending"
     flow_version: str = ""
+
+
+@dataclass(frozen=True)
+class ProjectMemory:
+    project_root: str
+    memory_type: str
+    subject: str
+    summary: str
+    evidence_refs: str = "[]"
+    related_paths: str = "[]"
+    source_note_ids: str = "[]"
+    confidence: str = "low"
+    status: str = "active"
+    flow_version: str = ""

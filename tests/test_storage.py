@@ -11,6 +11,9 @@ EXPECTED_TABLES = {
     "research_notes",
     "index_runs",
     "consistency_flags",
+    "improvement_proposals",
+    "embeddings",
+    "project_memories",
 }
 
 
@@ -97,10 +100,48 @@ def test_init_schema_migrates_old_research_notes_before_creating_new_indexes(tmp
     assert "project_root" in columns
     assert index_row is not None
 
+
+def test_init_schema_adds_project_memories_table_and_indexes_idempotently(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+
+    with connect_db(db_path) as conn:
+        init_schema(conn)
+        init_schema(conn)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(project_memories)").fetchall()}
+        indexes = {
+            row["name"]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'project_memories'"
+            ).fetchall()
+        }
+
+    assert {
+        "id",
+        "project_root",
+        "memory_type",
+        "subject",
+        "summary",
+        "evidence_refs",
+        "related_paths",
+        "source_note_ids",
+        "confidence",
+        "status",
+        "created_at",
+        "updated_at",
+        "flow_version",
+    }.issubset(columns)
+    assert {
+        "idx_project_memories_project_root",
+        "idx_project_memories_type",
+        "idx_project_memories_status",
+        "idx_project_memories_updated_at",
+    }.issubset(indexes)
+
 from src.indexer.models import (
     ConsistencyFlag,
     FileSummary,
     ProjectFile,
+    ProjectMemory,
     ResearchNote,
     SymbolInfo,
 )
@@ -295,3 +336,63 @@ def test_repository_searches_research_notes_by_project_root_and_summary(tmp_path
     assert [hit["id"] for hit in hits] == [note_id]
     assert hits[0]["source"] == "research_note"
     assert hits[0]["related_paths"] == ["src/route.cpp"]
+
+
+def test_repository_inserts_lists_searches_and_updates_project_memories(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+
+    first_id = repo.insert_project_memory(
+        ProjectMemory(
+            project_root="/tmp/project-a",
+            memory_type="risk_note",
+            subject="Escort route recalculation risk",
+            summary="Route recalculation may update escort state and send packets.",
+            evidence_refs='[{"path":"src/route.cpp","line_start":10,"line_end":20}]',
+            related_paths='["src/route.cpp"]',
+            source_note_ids="[1, 2]",
+            confidence="medium",
+            flow_version="test-flow",
+        )
+    )
+    repo.insert_project_memory(
+        ProjectMemory(
+            project_root="/tmp/project-b",
+            memory_type="risk_note",
+            subject="Other project risk",
+            summary="Other project route risk.",
+            related_paths='["src/other.cpp"]',
+            confidence="medium",
+        )
+    )
+    repo.insert_project_memory(
+        ProjectMemory(
+            project_root="/tmp/project-a",
+            memory_type="domain_concept",
+            subject="Escort movement",
+            summary="Escort car movement domain concept.",
+            related_paths='["src/move.cpp"]',
+            confidence="low",
+            status="stale",
+        )
+    )
+
+    listed = repo.list_project_memories(project_root="/tmp/project-a")
+    searched = repo.search_project_memories("押镖 路线 风险", project_root="/tmp/project-a")
+    stale = repo.list_project_memories(project_root="/tmp/project-a", status="stale")
+
+    assert first_id == 1
+    assert [item["id"] for item in listed] == [first_id]
+    assert listed[0]["source"] == "project_memory"
+    assert listed[0]["related_paths"] == ["src/route.cpp"]
+    assert listed[0]["source_note_ids"] == [1, 2]
+    assert listed[0]["evidence_refs"] == [{"path": "src/route.cpp", "line_start": 10, "line_end": 20}]
+    assert searched[0]["id"] == first_id
+    assert searched[0]["score"] > 0
+    assert stale[0]["memory_type"] == "domain_concept"
+
+    repo.update_project_memory_status(first_id, "stale")
+
+    assert repo.list_project_memories(project_root="/tmp/project-a") == []
+    assert repo.list_project_memories(project_root="/tmp/project-a", status="stale")[0]["id"] == first_id

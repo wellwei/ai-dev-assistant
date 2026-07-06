@@ -1,7 +1,8 @@
-from src.indexer.models import FileSummary, ProjectFile, ResearchNote, SymbolInfo
+from src.indexer.models import FileSummary, ProjectFile, ProjectMemory, ResearchNote, SymbolInfo
 from src.retriever.context_builder import build_context
 from src.retriever.hybrid_search import hybrid_search_project
 from src.retriever.keyword_search import search_project_index
+from src.retriever.project_memory import search_project_memory
 from src.retriever.research_memory import search_research_memory
 from src.retriever.vector_search import search_vector_index, upsert_embedding
 from src.storage.project_index import ProjectIndexRepository
@@ -591,6 +592,51 @@ def test_search_research_memory_returns_serializable_note_hits(tmp_path):
     assert hits[0]["id"] == note_id
     assert hits[0]["related_paths"] == ["src/route.cpp"]
     assert hits[0]["source"] == "research_note"
+
+
+def test_search_project_memory_returns_serializable_active_hits(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    memory_id = repo.insert_project_memory(
+        ProjectMemory(
+            project_root="/tmp/project",
+            memory_type="implementation_fact",
+            subject="Escort movement implementation",
+            summary="Escort car movement is implemented by move handlers.",
+            evidence_refs='[{"path":"src/move.cpp","line_start":1,"line_end":20}]',
+            related_paths='["src/move.cpp"]',
+            source_note_ids="[7]",
+            confidence="medium",
+        )
+    )
+    repo.insert_project_memory(
+        ProjectMemory(
+            project_root="/tmp/project",
+            memory_type="implementation_fact",
+            subject="Stale escort movement implementation",
+            summary="Old movement note.",
+            related_paths='["src/old_move.cpp"]',
+            status="stale",
+        )
+    )
+    repo.insert_project_memory(
+        ProjectMemory(
+            project_root="/tmp/other-project",
+            memory_type="implementation_fact",
+            subject="Other escort movement implementation",
+            summary="Other project move handlers.",
+            related_paths='["src/other.cpp"]',
+        )
+    )
+
+    hits = search_project_memory(db_path, "押镖 移动", project_root="/tmp/project")
+
+    assert [hit["id"] for hit in hits] == [memory_id]
+    assert hits[0]["source"] == "project_memory"
+    assert hits[0]["related_paths"] == ["src/move.cpp"]
+    assert hits[0]["source_note_ids"] == [7]
+    assert hits[0]["evidence_refs"] == [{"path": "src/move.cpp", "line_start": 1, "line_end": 20}]
 
 
 def test_vector_search_recalls_semantic_summary_and_refreshes_changed_source(tmp_path):

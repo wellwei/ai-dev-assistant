@@ -102,6 +102,27 @@ CREATE TABLE IF NOT EXISTS improvement_proposals (
 CREATE INDEX IF NOT EXISTS idx_improvement_proposals_status ON improvement_proposals(status);
 CREATE INDEX IF NOT EXISTS idx_improvement_proposals_type ON improvement_proposals(proposal_type);
 
+CREATE TABLE IF NOT EXISTS project_memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_root TEXT NOT NULL DEFAULT '',
+    memory_type TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    evidence_refs TEXT NOT NULL DEFAULT '[]',
+    related_paths TEXT NOT NULL DEFAULT '[]',
+    source_note_ids TEXT NOT NULL DEFAULT '[]',
+    confidence TEXT NOT NULL DEFAULT 'low',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    flow_version TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_memories_project_root ON project_memories(project_root);
+CREATE INDEX IF NOT EXISTS idx_project_memories_type ON project_memories(memory_type);
+CREATE INDEX IF NOT EXISTS idx_project_memories_status ON project_memories(status);
+CREATE INDEX IF NOT EXISTS idx_project_memories_updated_at ON project_memories(updated_at);
+
 CREATE TABLE IF NOT EXISTS index_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_root TEXT NOT NULL,

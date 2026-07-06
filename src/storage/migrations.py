@@ -67,6 +67,29 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_improvement_proposals_type ON improvement_proposals(proposal_type)")
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS project_memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_root TEXT NOT NULL DEFAULT '',
+            memory_type TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            related_paths TEXT NOT NULL DEFAULT '[]',
+            source_note_ids TEXT NOT NULL DEFAULT '[]',
+            confidence TEXT NOT NULL DEFAULT 'low',
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            flow_version TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_project_memories_project_root ON project_memories(project_root)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_project_memories_type ON project_memories(memory_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_project_memories_status ON project_memories(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_project_memories_updated_at ON project_memories(updated_at)")
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS embeddings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_type TEXT NOT NULL,

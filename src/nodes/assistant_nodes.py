@@ -5,6 +5,7 @@ from src.indexer.models import ResearchNote
 from src.retriever.context_builder import build_context
 from src.retriever.hybrid_search import hybrid_search_project
 from src.retriever.keyword_search import search_project_index
+from src.retriever.project_memory import search_project_memory
 from src.retriever.research_memory import search_research_memory
 from src.state import AssistantState
 from src.storage.project_index import ProjectIndexRepository
@@ -63,6 +64,22 @@ def retrieve_research_memory_node(state: AssistantState, repo: ProjectIndexRepos
     }
 
 
+def retrieve_project_memories_node(state: AssistantState, repo: ProjectIndexRepository | None = None) -> dict:
+    repository = _repo(state, repo)
+    try:
+        hits = search_project_memory(
+            repository.db_path,
+            state.get("question", ""),
+            project_root=state.get("project_root", ""),
+        )
+    except Exception:
+        hits = []
+    return {
+        "retrieved_project_memories": hits,
+        "project_memory_ids": [int(item["id"]) for item in hits],
+    }
+
+
 def retrieve_project_context_node(state: AssistantState, repo: ProjectIndexRepository | None = None) -> dict:
     repository = _repo(state, repo)
     question = state.get("question", "")
@@ -88,10 +105,24 @@ def _memory_context(memory: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _project_memory_context(memories: list[dict]) -> str:
+    if not memories:
+        return "No long-term project memory matched the request."
+    lines = []
+    for item in memories:
+        lines.append(
+            f"Project memory #{item.get('id')} [{item.get('memory_type') or 'unknown'}]: "
+            f"{item.get('summary') or ''} Paths={item.get('related_paths') or []}. "
+            "Long-term project memory only; current implementation evidence wins."
+        )
+    return "\n".join(lines)
+
+
 def analyze_request_node(state: AssistantState) -> dict:
     request_type = state.get("request_type", "unclear")
     context = build_context(state.get("retrieved_context", []))
     memory_context = _memory_context(state.get("retrieved_memory", []))
+    project_memory_context = _project_memory_context(state.get("retrieved_project_memories", []))
 
     if request_type == "unclear":
         return {
@@ -111,7 +142,7 @@ def analyze_request_node(state: AssistantState) -> dict:
             "This is a development-advice request. Use the indexed context to identify impact scope, risks, "
             "recommended change order, and verification actions. Do not directly modify the company C++ project "
             "in the initial assistant flow.\n\n"
-            f"{context}\n\nPrior research memory:\n{memory_context}"
+            f"{context}\n\nProject memories:\n{project_memory_context}\n\nPrior research memory:\n{memory_context}"
         )
         return {
             "analysis": analysis,
@@ -124,7 +155,7 @@ def analyze_request_node(state: AssistantState) -> dict:
     analysis = (
         "This is a project question or requirement research request. Distinguish implementation evidence from "
         "naming, comments, and documentation clues. Highlight any inconsistency flags explicitly.\n\n"
-        f"{context}\n\nPrior research memory:\n{memory_context}"
+        f"{context}\n\nProject memories:\n{project_memory_context}\n\nPrior research memory:\n{memory_context}"
     )
     return {"analysis": analysis}
 
@@ -216,11 +247,26 @@ def _memory_summary_for_user(memory: list[dict]) -> list[str]:
     return lines
 
 
+def _project_memory_summary_for_user(memories: list[dict]) -> list[str]:
+    lines: list[str] = []
+    for item in memories:
+        memory_id = item.get("id")
+        memory_type = item.get("memory_type") or "project_memory"
+        paths = item.get("related_paths") or []
+        summary = item.get("summary") or "长期项目记忆。"
+        lines.append(
+            f"- memory#{memory_id}（{memory_type}）涉及 {', '.join(paths) or '未记录路径'}："
+            f"{summary} 这是长期项目记忆，仅供参考；当前实现索引证据优先。"
+        )
+    return lines
+
+
 def synthesize_response_node(state: AssistantState) -> dict:
     request_type = state.get("request_type", "unclear")
     related_paths = state.get("related_paths", [])
     retrieved_context = state.get("retrieved_context", [])
     retrieved_memory = state.get("retrieved_memory", [])
+    retrieved_project_memories = state.get("retrieved_project_memories", [])
     open_questions = state.get("open_questions", [])
     suggested_commands = state.get("suggested_commands", [])
     selected_workflow = state.get("selected_workflow", {})
@@ -268,6 +314,8 @@ def synthesize_response_node(state: AssistantState) -> dict:
                 f"建议工作流：{selected_workflow.get('workflow_name')}（{approval_text}）。",
             ]
         )
+    if retrieved_project_memories:
+        answer_lines.extend(["", "长期项目记忆：", *_project_memory_summary_for_user(retrieved_project_memories)])
     if retrieved_memory:
         answer_lines.extend(["", "历史调研记忆：", *_memory_summary_for_user(retrieved_memory)])
     if suggested_commands:

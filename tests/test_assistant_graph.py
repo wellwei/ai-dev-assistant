@@ -1,7 +1,7 @@
 from langgraph.checkpoint.memory import InMemorySaver
 
 from src.assistant_graph import create_assistant_graph
-from src.indexer.models import FileSummary, ProjectFile
+from src.indexer.models import FileSummary, ProjectFile, ProjectMemory
 from src.retriever.vector_search import upsert_embedding
 from src.storage.project_index import ProjectIndexRepository
 from src.storage.sqlite import connect_db
@@ -25,6 +25,88 @@ def _seed_repo(db_path):
         )
     )
     return repo
+
+
+def test_assistant_graph_retrieves_and_displays_project_memories(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = _seed_repo(db_path)
+    memory_id = repo.insert_project_memory(
+        ProjectMemory(
+            project_root="/tmp/project",
+            memory_type="risk_note",
+            subject="Escort route risk",
+            summary="Route recalculation may update escort state.",
+            related_paths='["src/route.cpp"]',
+            confidence="medium",
+        )
+    )
+    graph = create_assistant_graph(repo=repo, checkpointer=InMemorySaver())
+
+    result = graph.invoke(
+        {
+            "question": "押镖 route 重算风险在哪里？",
+            "project_root": "/tmp/project",
+            "index_db_path": str(db_path),
+            "thread_id": "thread-project-memory",
+        },
+        {"configurable": {"thread_id": "thread-project-memory"}},
+    )
+
+    assert result["retrieved_project_memories"][0]["id"] == memory_id
+    assert memory_id in result["project_memory_ids"]
+    assert "Project memory #" in result["analysis"]
+    assert "Long-term project memory only" in result["analysis"]
+    assert "长期项目记忆" in result["answer"]
+    assert "当前实现索引证据优先" in result["answer"]
+    assert "memory#" in result["answer"]
+    assert "Long-term project memory only" not in result["answer"]
+    assert "Project memory #" not in result["answer"]
+    assert "current implementation evidence wins" not in result["answer"]
+
+
+def test_assistant_graph_omits_project_memory_section_when_no_match(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = _seed_repo(db_path)
+    graph = create_assistant_graph(repo=repo, checkpointer=InMemorySaver())
+
+    result = graph.invoke(
+        {
+            "question": "押镖 route 重算在哪里？",
+            "project_root": "/tmp/project",
+            "index_db_path": str(db_path),
+            "thread_id": "thread-project-memory-none",
+        },
+        {"configurable": {"thread_id": "thread-project-memory-none"}},
+    )
+
+    assert result.get("retrieved_project_memories", []) == []
+    assert result.get("project_memory_ids", []) == []
+    assert "长期项目记忆" not in result["answer"]
+
+
+def test_assistant_graph_project_memory_failure_is_non_blocking(tmp_path, monkeypatch):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = _seed_repo(db_path)
+
+    def fail_project_memory(*args, **kwargs):
+        raise RuntimeError("memory unavailable")
+
+    monkeypatch.setattr("src.nodes.assistant_nodes.search_project_memory", fail_project_memory)
+    graph = create_assistant_graph(repo=repo, checkpointer=InMemorySaver())
+
+    result = graph.invoke(
+        {
+            "question": "押镖 route 重算在哪里？",
+            "project_root": "/tmp/project",
+            "index_db_path": str(db_path),
+            "thread_id": "thread-project-memory-failure",
+        },
+        {"configurable": {"thread_id": "thread-project-memory-failure"}},
+    )
+
+    assert result["retrieved_project_memories"] == []
+    assert result["project_memory_ids"] == []
+    assert "src/route.cpp" in result["answer"]
 
 
 def test_assistant_graph_answers_project_question_and_persists_note(tmp_path):

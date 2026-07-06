@@ -27,8 +27,10 @@ class AssistantState(TypedDict, total=False):
     request_type: str
     retrieved_context: Annotated[list[dict], operator.add]
     retrieved_memory: Annotated[list[dict], operator.add]
+    retrieved_project_memories: Annotated[list[dict], operator.add]
     related_paths: Annotated[list[str], operator.add]
     memory_note_ids: Annotated[list[int], operator.add]
+    project_memory_ids: Annotated[list[int], operator.add]
     source_note_ids: Annotated[list[int], operator.add]
     selected_workflow: dict
     workflow_steps: Annotated[list[dict], operator.add]
