@@ -15,9 +15,15 @@ def _exact_boost(query: str, path: str, key_points: str = "") -> float:
     return boost
 
 
-def hybrid_search_project(db_path: str | Path, query: str, limit: int = 8) -> list[dict]:
+def hybrid_search_project(
+    db_path: str | Path,
+    query: str,
+    limit: int = 8,
+    *,
+    initialize_schema: bool = True,
+) -> list[dict]:
     by_path: dict[str, dict] = {}
-    for item in search_project_index(db_path, query, limit=limit):
+    for item in search_project_index(db_path, query, limit=limit, initialize_schema=initialize_schema):
         path = item["path"]
         merged = dict(item)
         merged["keyword_score"] = item.get("score", 0)
@@ -25,7 +31,7 @@ def hybrid_search_project(db_path: str | Path, query: str, limit: int = 8) -> li
         merged["hybrid_score"] = float(merged["keyword_score"]) + _exact_boost(query, path, item.get("key_points") or "")
         by_path[path] = merged
 
-    for item in search_vector_index(db_path, query, limit=limit):
+    for item in search_vector_index(db_path, query, limit=limit, initialize_schema=initialize_schema):
         path = item.get("source_path") or item.get("source_id")
         if not path:
             continue

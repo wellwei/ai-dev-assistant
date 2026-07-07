@@ -1,0 +1,54 @@
+[
+  {
+    "id": "gameplay_movement_position_sync",
+    "query": "移动 位置变化 同步",
+    "limit": 8,
+    "expected_paths": [
+      {"path": "src/functional/change_sync.h", "max_rank": 1},
+      {"path": "src/task/sync/process_sync_rs_task.cpp", "max_rank": 2},
+      {"path": "src/task/tcp/process_cli_role_move_tcp_task.cpp", "max_rank": 3}
+    ],
+    "noise_paths": [
+      {"path": "src/task/tcp/process_svr_remove_role_by_type_tcp_task.cpp", "disallowed_above_rank": 2},
+      {"path": "src/task/conn/remove_connection_task.cpp", "disallowed_above_rank": 2},
+      {"path": "CMakeLists.txt", "disallowed_above_rank": 3}
+    ]
+  },
+  {
+    "id": "gameplay_combat_damage",
+    "query": "战斗 伤害 扣血 damage",
+    "limit": 8,
+    "expected_paths": [
+      {"path": "src/battle_calculate/battle_calculate.cpp", "max_rank": 1},
+      {"path": "src/battle_calculate/effect_calculate_process.cpp", "max_rank": 3},
+      {"path": "src/task/work/send_escort_battle_notify_list_complex_task.cpp", "max_rank": 7}
+    ],
+    "noise_paths": [
+      {"path": "CMakeLists.txt", "disallowed_above_rank": 3}
+    ]
+  },
+  {
+    "id": "gameplay_charge_logic",
+    "query": "冲锋 charge 战斗 命中",
+    "limit": 8,
+    "expected_paths": [
+      {"path": "src/battle_calculate/effect_calculate_check_hit.cpp", "max_rank": 1},
+      {"path": "src/task/work/role_charge_count_info_complex_task.cpp", "max_rank": 4}
+    ],
+    "noise_paths": [
+      {"path": "CMakeLists.txt", "disallowed_above_rank": 3}
+    ]
+  },
+  {
+    "id": "gameplay_mount_logic",
+    "query": "坐骑 上马 下马 速度 同步",
+    "limit": 8,
+    "expected_paths": [
+      {"path": "src/rtb_proc/character/rtb_proc_character_horse.cpp", "max_rank": 3},
+      {"path": "src/task/tcp/process_cli_summoning_mount_tcp_task.cpp", "max_rank": 5}
+    ],
+    "noise_paths": [
+      {"path": "CMakeLists.txt", "disallowed_above_rank": 3}
+    ]
+  }
+]

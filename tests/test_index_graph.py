@@ -115,8 +115,8 @@ int query_route(Context* ctx) {
     )
 
     assert "src/map_data/sea_route.cpp" in answer["answer"]
-    assert "置信度" in answer["answer"]
-    assert "注释" in answer["answer"] or "命名" in answer["answer"]
+    assert "Confidence" in answer["answer"]
+    assert "comment" in answer["answer"] or "name" in answer["answer"]
 
 
 def test_create_index_graph_ignores_langgraph_factory_config_dict(tmp_path):

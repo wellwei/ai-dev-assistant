@@ -247,7 +247,7 @@ def test_search_project_index_applies_escort_domain_intent_boosts(tmp_path):
     client_query = search_project_index(db_path, "客户端 查询 二段路线", limit=5)
 
     assert movement[0]["path"] == "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp"
-    assert "escort domain intent" in movement[0]["ranking_reason"]
+    assert "gameplay domain intent" in movement[0]["ranking_reason"]
     assert sea_route[0]["path"] == "src/map_data/sea_route_3d.cpp"
     assert recalc[0]["path"] in {
         "src/task/work/cal_cross_map_route_cost_time_complex_task.cpp",
@@ -537,6 +537,267 @@ def test_sport_status_change_terms_promote_movement_logic(tmp_path):
 
     assert results[0]["path"] == "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp"
     assert "movement" in results[0]["ranking_reason"]
+
+
+def _seed_summary(
+    repo: ProjectIndexRepository,
+    path: str,
+    summary: str,
+    key_points: str,
+    dependencies: str,
+    evidence: str = "symbol scan; side effects: state_write,network_send",
+    file_type: str = "source",
+    language: str = "cpp",
+) -> None:
+    repo.upsert_file(ProjectFile(path, f"/tmp/{path}", file_type, language, 10, 1.0, f"hash-{path}"))
+    repo.upsert_summary(
+        FileSummary(
+            path=path,
+            summary=summary,
+            responsibilities=summary,
+            key_points=key_points,
+            dependencies=dependencies,
+            risks="verify implementation",
+            evidence=evidence,
+            inconsistencies="none",
+            confidence="medium" if file_type == "source" else "low",
+            confidence_score=0.6 if file_type == "source" else 0.2,
+        )
+    )
+
+
+def test_search_project_index_prioritizes_gameplay_movement_position_sync(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    _seed_summary(
+        repo,
+        "src/rtb_proc/character/rtb_proc_character_move.cpp",
+        "Handles character movement position sync and state change.",
+        "sync_character_position, update_move_position, broadcast_position_change",
+        "movement, position, sync",
+    )
+    _seed_summary(
+        repo,
+        "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp",
+        "Handles escort car movement.",
+        "escort_car_move6",
+        "escort, route",
+    )
+    _seed_summary(
+        repo,
+        "src/map_data/sea_route.cpp",
+        "Implements escort route recalculation.",
+        "recalc_route_main_work_handler",
+        "map, route",
+    )
+    _seed_summary(
+        repo,
+        "CMakeLists.txt",
+        "Build config repeats movement position sync text.",
+        "movement position sync",
+        "config",
+        "config text",
+        file_type="build",
+        language="cmake",
+    )
+
+    results = search_project_index(db_path, "移动 位置变化 同步", limit=5)
+    paths = [item["path"] for item in results]
+
+    assert paths[0] == "src/rtb_proc/character/rtb_proc_character_move.cpp"
+    assert paths.index("src/rtb_proc/character/rtb_proc_character_move.cpp") < paths.index(
+        "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp"
+    )
+    if "src/map_data/sea_route.cpp" in paths:
+        assert paths.index("src/rtb_proc/character/rtb_proc_character_move.cpp") < paths.index("src/map_data/sea_route.cpp")
+    assert "gameplay domain intent" in results[0]["ranking_reason"]
+
+
+def test_search_project_index_prioritizes_combat_damage_charge_logic(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    _seed_summary(
+        repo,
+        "src/rtb_proc/battle/rtb_proc_battle_damage.cpp",
+        "Applies battle damage, hp change, and combat side effects.",
+        "apply_battle_damage, calc_damage_result, broadcast_hp_change",
+        "battle, damage, packet",
+    )
+    _seed_summary(
+        repo,
+        "src/skill/charge_skill.cpp",
+        "Handles charge skill movement into combat target.",
+        "start_charge, check_charge_hit, finish_charge",
+        "battle, charge, movement",
+    )
+    _seed_summary(
+        repo,
+        "src/map_data/sea_route.cpp",
+        "Implements escort route recalculation.",
+        "recalc_route_main_work_handler",
+        "map, route",
+    )
+    _seed_summary(
+        repo,
+        "src/resource/damage_table_config.cpp",
+        "Config table mentions damage many times.",
+        "damage_config, damage_table",
+        "resource, config",
+    )
+
+    damage_results = search_project_index(db_path, "战斗 伤害 扣血 damage", limit=5)
+    charge_results = search_project_index(db_path, "冲锋 charge 战斗 命中", limit=5)
+
+    assert damage_results[0]["path"] == "src/rtb_proc/battle/rtb_proc_battle_damage.cpp"
+    assert charge_results[0]["path"] == "src/skill/charge_skill.cpp"
+    assert "gameplay domain intent" in damage_results[0]["ranking_reason"]
+    assert "gameplay domain intent" in charge_results[0]["ranking_reason"]
+
+
+def test_search_project_index_prioritizes_mount_logic_without_escort_terms(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    _seed_summary(
+        repo,
+        "src/rtb_proc/mount/rtb_proc_mount.cpp",
+        "Handles mount state, mounting, dismounting, speed changes, and rider sync.",
+        "mount_up, dismount, sync_mount_position, update_mount_speed",
+        "mount, movement, sync",
+    )
+    _seed_summary(
+        repo,
+        "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp",
+        "Handles escort car movement stop and status transitions.",
+        "escort_car_move6",
+        "escort, route",
+    )
+    _seed_summary(
+        repo,
+        "src/db/db_mount_config.cpp",
+        "Loads mount config values.",
+        "load_mount_config",
+        "db, config",
+    )
+
+    results = search_project_index(db_path, "坐骑 上马 下马 速度 同步", limit=5)
+    paths = [item["path"] for item in results]
+
+    assert paths[0] == "src/rtb_proc/mount/rtb_proc_mount.cpp"
+    assert paths.index("src/rtb_proc/mount/rtb_proc_mount.cpp") < paths.index("src/db/db_mount_config.cpp")
+    assert "gameplay domain intent" in results[0]["ranking_reason"]
+
+
+def test_search_project_index_does_not_match_move_inside_remove_path(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    _seed_summary(
+        repo,
+        "src/rtb_proc/character/character_move.cpp",
+        "Handles move position sync.",
+        "character_move, sync_position",
+        "movement, position, sync",
+    )
+    _seed_summary(
+        repo,
+        "src/tools/remove_stale_position.cpp",
+        "Removes stale records from cleanup storage.",
+        "remove_stale_position",
+        "cleanup",
+    )
+
+    results = search_project_index(db_path, "move 位置同步", limit=5)
+    paths = [item["path"] for item in results]
+
+    assert paths[0] == "src/rtb_proc/character/character_move.cpp"
+    assert paths.index("src/rtb_proc/character/character_move.cpp") < paths.index("src/tools/remove_stale_position.cpp")
+    remove_result = next(item for item in results if item["path"] == "src/tools/remove_stale_position.cpp")
+    assert "path token match: move" not in remove_result["ranking_reason"]
+
+
+def test_search_project_index_splits_camel_case_symbols_for_exact_token_recall(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    _seed_summary(
+        repo,
+        "src/task/sync/process_sync_rs_task.cpp",
+        "Processes role state updates.",
+        "syncRolePosition",
+        "role sync",
+    )
+    _seed_summary(
+        repo,
+        "src/battle_calculate/battle_calculate.cpp",
+        "Calculates combat statistics.",
+        "updateDamageMeData",
+        "combat stats",
+    )
+
+    sync_results = search_project_index(db_path, "sync position", limit=5)
+    damage_results = search_project_index(db_path, "damage me", limit=5)
+
+    assert sync_results[0]["path"] == "src/task/sync/process_sync_rs_task.cpp"
+    assert damage_results[0]["path"] == "src/battle_calculate/battle_calculate.cpp"
+
+
+def test_search_project_index_restores_english_route_intent_phrases(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    _seed_summary(
+        repo,
+        "src/task/tcp/process_cli_query_second_route_tcp_task.cpp",
+        "Handles client second route query requests.",
+        "process_cli_query_second_route",
+        "client route query",
+    )
+    _seed_summary(
+        repo,
+        "src/task/work/cal_cross_map_route_cost_time_complex_task.cpp",
+        "Calculates route cost for escort route recalculation.",
+        "cal_cross_map_route_cost_time, recalculateEscortRoute",
+        "escort route recalculation",
+    )
+    _seed_summary(
+        repo,
+        "src/map_data/sea_route_3d.cpp",
+        "Stores sea route geometry and map data.",
+        "loadSeaRoute3d",
+        "sea route map data",
+    )
+
+    client_results = search_project_index(db_path, "client second route handler", limit=5)
+    recalc_results = search_project_index(db_path, "escort route recalculation risk", limit=5)
+    sea_results = search_project_index(db_path, "sea route map", limit=5)
+
+    assert client_results[0]["path"] == "src/task/tcp/process_cli_query_second_route_tcp_task.cpp"
+    assert recalc_results[0]["path"] == "src/task/work/cal_cross_map_route_cost_time_complex_task.cpp"
+    assert sea_results[0]["path"] == "src/map_data/sea_route_3d.cpp"
+
+
+def test_search_project_memory_matches_gameplay_synonyms(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    memory_id = repo.insert_project_memory(
+        ProjectMemory(
+            project_root="/tmp/project",
+            memory_type="domain_concept",
+            subject="Movement position sync",
+            summary="Character move position sync updates current position and broadcasts changes.",
+            related_paths='["src/rtb_proc/character/character_move.cpp"]',
+            confidence="medium",
+        )
+    )
+
+    hits = search_project_memory(db_path, "移动 位置 同步", project_root="/tmp/project")
+
+    assert hits[0]["id"] == memory_id
+    assert hits[0]["related_paths"] == ["src/rtb_proc/character/character_move.cpp"]
 
 
 def test_search_project_index_ignores_symbols_for_deleted_files(tmp_path):

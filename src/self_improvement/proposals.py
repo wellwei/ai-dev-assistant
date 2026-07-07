@@ -24,19 +24,40 @@ def _looks_like_repeated_route_risk(notes: list[dict]) -> bool:
     return matches >= 2
 
 
-def draft_research_memory_proposals(
-    repo: ProjectIndexRepository,
-    *,
-    project_root: str,
-    flow_version: str = "",
-    limit: int = 20,
-) -> list[int]:
-    notes = repo.list_recent_research_notes(project_root=project_root, limit=limit)
-    if not _looks_like_repeated_route_risk(notes):
-        return []
+def _looks_like_repeated_gameplay_retrieval_gap(notes: list[dict]) -> bool:
+    domain_terms = [
+        "移动",
+        "move",
+        "movement",
+        "position",
+        "sync",
+        "战斗",
+        "battle",
+        "combat",
+        "伤害",
+        "damage",
+        "hurt",
+        "冲锋",
+        "charge",
+        "坐骑",
+        "mount",
+        "上马",
+        "下马",
+    ]
+    uncertainty_terms = ["low", "unresolved", "open", "gap", "未确认", "待确认", "需确认", "需要确认"]
+    resolved_terms = ["已确认", "confirmed", "no retrieval gap remains", "no gap remains"]
+    matches = 0
+    for note in notes:
+        text = _note_text(note)
+        if any(term in text for term in resolved_terms):
+            continue
+        if any(term in text for term in domain_terms) and any(term in text for term in uncertainty_terms):
+            matches += 1
+    return matches >= 2
 
-    source_note_ids = [note["id"] for note in notes[:5]]
-    proposal = ImprovementProposal(
+
+def _route_risk_proposal(source_note_ids: list[int], flow_version: str) -> ImprovementProposal:
+    return ImprovementProposal(
         proposal_type="retrieval_synonym_update",
         source_note_ids=json.dumps(source_note_ids),
         target_component="src/retriever/keyword_search.py",
@@ -52,4 +73,38 @@ def draft_research_memory_proposals(
         risk="Low. This is a pending proposal only and does not mutate retrieval behavior automatically.",
         flow_version=flow_version,
     )
-    return [repo.insert_improvement_proposal(proposal)]
+
+
+def _gameplay_retrieval_proposal(source_note_ids: list[int], flow_version: str) -> ImprovementProposal:
+    return ImprovementProposal(
+        proposal_type="retrieval_synonym_update",
+        source_note_ids=json.dumps(source_note_ids),
+        target_component="src/retriever/keyword_search.py",
+        proposed_change=(
+            "Review gameplay retrieval synonyms for movement position sync, battle damage, charge, "
+            "and mount questions so future gameplay research recalls implementation files more reliably."
+        ),
+        rationale=(
+            "Multiple low-confidence research notes mention gameplay movement/combat/mount retrieval gaps, "
+            "which suggests reusable keyword and intent tuning may be useful."
+        ),
+        evidence=f"Source research notes: {source_note_ids}",
+        risk="Low. This is a pending proposal only and does not mutate retrieval behavior automatically.",
+        flow_version=flow_version,
+    )
+
+
+def draft_research_memory_proposals(
+    repo: ProjectIndexRepository,
+    *,
+    project_root: str,
+    flow_version: str = "",
+    limit: int = 20,
+) -> list[int]:
+    notes = repo.list_recent_research_notes(project_root=project_root, limit=limit)
+    source_note_ids = [note["id"] for note in notes[:5]]
+    if _looks_like_repeated_route_risk(notes):
+        return [repo.insert_improvement_proposal(_route_risk_proposal(source_note_ids, flow_version))]
+    if _looks_like_repeated_gameplay_retrieval_gap(notes):
+        return [repo.insert_improvement_proposal(_gameplay_retrieval_proposal(source_note_ids, flow_version))]
+    return []

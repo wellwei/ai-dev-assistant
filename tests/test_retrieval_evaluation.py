@@ -157,6 +157,10 @@ def test_load_eval_cases_reads_fixture_directory():
         "escort_route_recalc_business_impl",
         "escort_client_second_route_query",
         "escort_sea_route_map_data",
+        "gameplay_movement_position_sync",
+        "gameplay_combat_damage",
+        "gameplay_charge_logic",
+        "gameplay_mount_logic",
     }
     assert cases_by_id["escort_car_move_core"].expected_paths[0].path == "src/rtb_proc/escort_car/rtb_proc_escort_car_move.cpp"
     assert cases_by_id["escort_car_position_sync_stop_state"].expected_paths[0].max_rank == 1
@@ -169,6 +173,11 @@ def test_load_eval_cases_reads_fixture_directory():
     assert cases_by_id["escort_route_recalc_business_impl"].expected_paths[1].path == "src/task/tcp/process_recalc_route_task.cpp"
     assert cases_by_id["escort_sea_route_map_data"].expected_paths[0].path == "src/map_data/sea_route.cpp"
     assert cases_by_id["escort_route_recalc_business_impl"].noise_paths[0].path == "CMakeLists.txt"
+    assert cases_by_id["gameplay_movement_position_sync"].noise_paths[0].path == (
+        "src/task/tcp/process_svr_remove_role_by_type_tcp_task.cpp"
+    )
+    assert cases_by_id["gameplay_combat_damage"].expected_paths[0].path == "src/battle_calculate/battle_calculate.cpp"
+    assert cases_by_id["gameplay_mount_logic"].expected_paths[0].max_rank == 3
 
 
 def test_evaluate_cases_and_report_show_failures():
