@@ -238,6 +238,68 @@ def test_assistant_graph_answer_surfaces_key_symbols_for_movement_context(tmp_pa
     assert "Key points:" not in result["answer"]
 
 
+def test_assistant_graph_answers_gameplay_movement_combat_mount_context_in_chinese(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    files = [
+        (
+            "src/rtb_proc/character/character_move.cpp",
+            "Handles character movement position sync.",
+            "sync_character_position, update_move_position",
+            "movement, position, sync",
+        ),
+        (
+            "src/rtb_proc/battle/rtb_proc_battle_damage.cpp",
+            "Applies battle damage and hp changes.",
+            "apply_battle_damage, calc_damage_result",
+            "battle, damage",
+        ),
+        (
+            "src/rtb_proc/character/rtb_proc_character_horse.cpp",
+            "Handles mount state and speed sync.",
+            "mount_up, dismount, sync_mount_position",
+            "mount, movement, sync",
+        ),
+    ]
+    for path, summary, key_points, dependencies in files:
+        repo.upsert_file(ProjectFile(path, f"/tmp/{path}", "source", "cpp", 10, 1.0, f"hash-{path}"))
+        repo.upsert_summary(
+            FileSummary(
+                path=path,
+                summary=summary,
+                responsibilities=summary,
+                key_points=key_points,
+                dependencies=dependencies,
+                risks="verify implementation",
+                evidence="symbol scan; side effects: state_write,network_send",
+                inconsistencies="none",
+                confidence="medium",
+            )
+        )
+    graph = create_assistant_graph(repo=repo, checkpointer=InMemorySaver())
+
+    result = graph.invoke(
+        {
+            "question": "移动位置同步、战斗伤害、坐骑逻辑分别在哪里？",
+            "project_root": "/tmp/project",
+            "index_db_path": str(db_path),
+            "thread_id": "thread-gameplay-domains",
+        },
+        {"configurable": {"thread_id": "thread-gameplay-domains"}},
+    )
+
+    assert "src/rtb_proc/character/character_move.cpp" in result["answer"]
+    assert "src/rtb_proc/battle/rtb_proc_battle_damage.cpp" in result["answer"]
+    assert "src/rtb_proc/character/rtb_proc_character_horse.cpp" in result["answer"]
+    assert "关键函数/符号" in result["answer"]
+    assert "sync_character_position" in result["answer"]
+    assert "apply_battle_damage" in result["answer"]
+    assert "mount_up" in result["answer"]
+    assert "This is a project question" not in result["answer"]
+    assert "Key points:" not in result["answer"]
+
+
 def test_assistant_graph_classifies_development_advice(tmp_path):
     db_path = tmp_path / "project_index.sqlite"
     repo = _seed_repo(db_path)

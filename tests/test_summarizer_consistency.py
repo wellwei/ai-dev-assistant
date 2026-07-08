@@ -67,3 +67,33 @@ int query_resource(Context* ctx) {
     assert "query_resource" in summary.evidence_spans
     assert summary.confidence_score < 0.7
     assert "consistency flags reduce trust" in summary.confidence_reasons
+
+
+def test_summarizer_dependency_hints_include_gameplay_movement_domains():
+    content = """
+void sync_position(Context* ctx) {
+    ctx->position = ctx->next_position;
+    apply_damage(ctx);
+    start_charge(ctx);
+    mount_up(ctx);
+    broadcast_position(ctx);
+}
+"""
+    project_file = ProjectFile(
+        path="src/rtb_proc/character/character_move.cpp",
+        abs_path="/tmp/project/src/rtb_proc/character/character_move.cpp",
+        file_type="source",
+        language="cpp",
+        size_bytes=len(content),
+        mtime=1.0,
+        content_hash="hash-gameplay",
+    )
+    symbols = extract_symbols(project_file.path, content)
+
+    summary = summarize_implementation(project_file, content, symbols, [])
+
+    assert "position" in summary.dependencies
+    assert "sync" in summary.dependencies
+    assert "damage" in summary.dependencies
+    assert "charge" in summary.dependencies
+    assert "mount" in summary.dependencies

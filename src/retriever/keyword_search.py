@@ -10,13 +10,14 @@ def _tokens(query: str) -> list[str]:
     synonym_map = {
         "路线": ["route"],
         "移动": ["move", "movement"],
+        "位移": ["move", "movement", "position"],
         "跟随": ["follow"],
         "重算": ["recalc", "recalculation"],
         "押镖": ["escort"],
         "地图": ["map"],
-        "位置": ["position", "pos", "curr_pos"],
-        "坐标": ["position", "pos", "curr_pos"],
-        "同步": ["sync"],
+        "位置": ["position", "pos", "curr_pos", "location"],
+        "坐标": ["position", "pos", "curr_pos", "coord", "coordinate"],
+        "同步": ["sync", "synchronize"],
         "停止": ["stop"],
         "异常": ["outside", "status"],
         "跳跃": ["jump", "skip"],
@@ -24,11 +25,18 @@ def _tokens(query: str) -> list[str]:
         "迁移": ["migration"],
         "离线": ["offline"],
         "死亡": ["dead"],
-        "上马": ["mounting"],
+        "战斗": ["battle", "combat", "fight"],
+        "伤害": ["damage", "hurt", "hp", "attack"],
+        "扣血": ["damage", "hp"],
+        "冲锋": ["charge", "dash", "rush"],
+        "命中": ["hit", "target"],
+        "坐骑": ["mount", "mounting", "rider", "horse"],
+        "上马": ["mount", "mounting"],
+        "下马": ["dismount"],
         "速度": ["speed"],
         "距离": ["distance"],
         "半径": ["radius"],
-        "变化": ["change", "chg"],
+        "变化": ["change", "chg", "update"],
         "原因": ["reason"],
         "日志": ["log"],
         "资源": ["resource"],
@@ -40,14 +48,37 @@ def _tokens(query: str) -> list[str]:
     return expanded
 
 
+def _is_ascii_token(token: str) -> bool:
+    return bool(re.fullmatch(r"[a-z0-9_]+", token))
+
+
+def _text_terms(text: str) -> list[str]:
+    lowered = text.lower()
+    raw = [part for part in re.split(r"[^0-9a-zA-Z_一-鿿]+", lowered) if part]
+    terms: list[str] = []
+    for part in raw:
+        terms.append(part)
+        if "_" in part:
+            terms.extend(piece for piece in part.split("_") if piece)
+    return terms
+
+
+def _count_token(text: str, token: str) -> int:
+    lowered_token = token.lower()
+    if not lowered_token:
+        return 0
+    if _is_ascii_token(lowered_token):
+        return sum(1 for term in _text_terms(text) if term == lowered_token)
+    return text.lower().count(lowered_token)
+
+
 def _score(row: dict, tokens: list[str]) -> int:
     haystack = " ".join(str(row.get(key) or "") for key in row).lower()
-    return sum(haystack.count(token) for token in tokens)
+    return sum(_count_token(haystack, token) for token in tokens)
 
 
 def _field_score(text: str, tokens: list[str], weight: float, cap: int = 3) -> float:
-    lowered = text.lower()
-    return sum(min(lowered.count(token), cap) * weight for token in tokens)
+    return sum(min(_count_token(text, token), cap) * weight for token in tokens)
 
 
 def _weighted_text_score(item: dict, tokens: list[str]) -> float:
@@ -65,22 +96,69 @@ def _weighted_text_score(item: dict, tokens: list[str]) -> float:
 
 
 def _path_token_boost(path: str, tokens: list[str]) -> tuple[float, list[str]]:
-    path_lower = path.lower()
-    matched = {token for token in tokens if len(token) >= 3 and token in path_lower}
+    path_terms = set(_text_terms(path))
+    matched = {
+        token
+        for token in tokens
+        if len(token) >= 3 and ((_is_ascii_token(token) and token in path_terms) or (not _is_ascii_token(token) and token in path.lower()))
+    }
     if not matched:
         return 0.0, []
     return min(len(matched) * 28.0, 70.0), [f"path token match: {', '.join(sorted(matched))}"]
 
 
-def _escort_domain_intents(query: str) -> set[str]:
+_GAMEPLAY_INTENT_TERMS = {
+    "movement": [
+        "移动",
+        "位移",
+        "move",
+        "movement",
+        "follow",
+        "跟随",
+        "位置",
+        "坐标",
+        "position",
+        "pos",
+        "location",
+        "coord",
+        "coordinate",
+        "同步",
+        "sync",
+        "synchronize",
+        "变化",
+        "change",
+        "chg",
+        "update",
+        "sport_status",
+        "stop",
+    ],
+    "combat": ["战斗", "battle", "combat", "fight"],
+    "damage": ["伤害", "扣血", "damage", "hurt", "hp", "attack"],
+    "charge": ["冲锋", "charge", "dash", "rush"],
+    "mount": ["坐骑", "上马", "下马", "mount", "mounting", "dismount", "rider", "horse"],
+}
+
+_GAMEPLAY_PATH_TERMS = {
+    "movement": {"move", "movement", "position", "pos", "sync", "location", "coord", "character", "role"},
+    "combat": {"battle", "combat", "fight", "attack"},
+    "damage": {"damage", "hurt", "hp", "attack", "battle"},
+    "charge": {"charge", "dash", "rush", "skill"},
+    "mount": {"mount", "mounting", "dismount", "horse", "rider"},
+}
+
+
+def _query_has_term(query: str, term: str) -> bool:
+    lowered = query.lower()
+    if _is_ascii_token(term):
+        return term in set(_text_terms(query))
+    return term in lowered
+
+
+def _gameplay_domain_intents(query: str) -> set[str]:
     lowered = query.lower()
     intents: set[str] = set()
     has_escort_context = any(word in lowered for word in ["押镖", "镖车", "escort"])
-    direct_movement_terms = ["移动", "move", "follow", "跟随"]
     escort_movement_state_terms = [
-        "位置",
-        "坐标",
-        "同步",
         "停止",
         "异常",
         "跳跃",
@@ -88,57 +166,60 @@ def _escort_domain_intents(query: str) -> set[str]:
         "迁移",
         "离线",
         "死亡",
-        "上马",
         "速度",
         "距离",
         "半径",
-        "变化",
         "原因",
         "日志",
-        "position",
-        "pos",
-        "sync",
-        "stop",
-        "sport_status",
-        "chg_reason",
         "timeout",
         "migration",
         "offline",
         "dead",
-        "mount",
         "speed",
         "distance",
         "radius",
         "jump",
         "skip",
     ]
-    if any(word in lowered for word in direct_movement_terms) or (
-        has_escort_context and any(word in lowered for word in escort_movement_state_terms)
-    ):
+
+    for intent, terms in _GAMEPLAY_INTENT_TERMS.items():
+        if any(_query_has_term(query, term) for term in terms):
+            intents.add(intent)
+    if has_escort_context and any(_query_has_term(query, term) for term in escort_movement_state_terms):
         intents.add("movement")
-    if any(word in lowered for word in ["海路", "地图", "map", "sea_route", "sea route"]):
+    if any(_query_has_term(query, term) for term in ["海路", "地图", "map", "sea_route"]):
         intents.add("sea_route")
-    if any(word in lowered for word in ["重算", "recalc", "cost", "耗时"]):
+    if any(_query_has_term(query, term) for term in ["重算", "recalc", "cost", "耗时"]):
         intents.add("route_recalc")
-    if any(word in lowered for word in ["客户端", "查询", "query", "second route"]):
+    if any(_query_has_term(query, term) for term in ["客户端", "查询", "query"]):
         intents.add("client_route_query")
-    if any(word in lowered for word in ["押镖", "escort"]):
+    if any(_query_has_term(query, term) for term in ["押镖", "escort"]):
         intents.add("escort")
     return intents
 
 
-def _escort_domain_boost(path: str, query: str) -> tuple[float, list[str]]:
-    intents = _escort_domain_intents(query)
+def _escort_domain_intents(query: str) -> set[str]:
+    return _gameplay_domain_intents(query)
+
+
+def _gameplay_domain_boost(path: str, query: str) -> tuple[float, list[str]]:
+    intents = _gameplay_domain_intents(query)
     if not intents:
         return 0.0, []
     lowered_path = path.lower()
+    path_terms = set(_text_terms(path))
     boost = 0.0
     reasons: list[str] = []
     matched: list[str] = []
 
+    for intent in ["movement", "combat", "damage", "charge", "mount"]:
+        if intent in intents and path_terms.intersection(_GAMEPLAY_PATH_TERMS[intent]):
+            boost += 58.0
+            matched.append(intent)
     if "movement" in intents and any(part in lowered_path for part in ["escort_car_move", "/move/", "follow_escort_car_move"]):
-        boost += 65.0
-        matched.append("movement")
+        boost += 22.0
+        if "movement" not in matched:
+            matched.append("movement")
     if "sea_route" in intents and any(part in lowered_path for part in ["sea_route", "map_data"]):
         boost += 70.0
         matched.append("sea_route")
@@ -153,8 +234,12 @@ def _escort_domain_boost(path: str, query: str) -> tuple[float, list[str]]:
         matched.append("escort_car")
 
     if matched:
-        reasons.append(f"escort domain intent: {', '.join(sorted(set(matched)))}")
+        reasons.append(f"gameplay domain intent: {', '.join(sorted(set(matched)))}")
     return boost, reasons
+
+
+def _escort_domain_boost(path: str, query: str) -> tuple[float, list[str]]:
+    return _gameplay_domain_boost(path, query)
 
 
 def _implementation_boost(item: dict, tokens: list[str], symbols: list[dict], query: str) -> tuple[float, list[str]]:
@@ -203,7 +288,7 @@ def _implementation_boost(item: dict, tokens: list[str], symbols: list[dict], qu
 
     boost += path_boost
     reasons.extend(path_reasons)
-    domain_boost, domain_reasons = _escort_domain_boost(path, query)
+    domain_boost, domain_reasons = _gameplay_domain_boost(path, query)
     boost += domain_boost
     reasons.extend(domain_reasons)
 

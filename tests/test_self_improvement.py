@@ -101,3 +101,48 @@ def test_draft_research_memory_proposals_only_creates_pending_proposals(tmp_path
     assert pending[0]["flow_version"] == "test-flow"
     assert pending[0]["source_note_ids"] == [second, first]
     assert "route risk" in pending[0]["proposed_change"]
+
+
+def test_draft_research_memory_proposals_detects_repeated_gameplay_retrieval_gaps(tmp_path):
+    db_path = tmp_path / "project_index.sqlite"
+    repo = ProjectIndexRepository(db_path)
+    repo.init()
+    first = repo.insert_research_note(
+        ResearchNote(
+            thread_id="thread-gameplay-1",
+            request_type="requirement_research",
+            question="移动位置同步逻辑在哪里？",
+            answer_summary="Low confidence: movement position sync retrieval needs confirmation.",
+            related_paths=json.dumps(["src/rtb_proc/character/character_move.cpp"]),
+            open_questions=json.dumps(["Confirm movement sync side effects."]),
+            project_root="/tmp/project",
+            internal_memory_summary="low confidence movement sync retrieval gap",
+            user_answer_summary="移动同步检索结果待确认。",
+            confidence="low",
+        )
+    )
+    second = repo.insert_research_note(
+        ResearchNote(
+            thread_id="thread-gameplay-2",
+            request_type="requirement_research",
+            question="坐骑上马同步和伤害打断在哪里？",
+            answer_summary="Low confidence: mount sync and damage interrupt paths need better retrieval.",
+            related_paths=json.dumps(["src/rtb_proc/character/rtb_proc_character_horse.cpp"]),
+            open_questions=json.dumps(["Confirm mount sync side effects."]),
+            project_root="/tmp/project",
+            source_note_ids=json.dumps([first]),
+            internal_memory_summary="low confidence mount sync damage retrieval gap",
+            user_answer_summary="坐骑同步和伤害打断检索结果待确认。",
+            confidence="low",
+        )
+    )
+
+    proposals = draft_research_memory_proposals(repo, project_root="/tmp/project", flow_version="test-flow")
+    pending = repo.list_improvement_proposals(status="pending")
+
+    assert len(proposals) == 1
+    assert len(pending) == 1
+    assert pending[0]["proposal_type"] == "retrieval_synonym_update"
+    assert pending[0]["target_component"] == "src/retriever/keyword_search.py"
+    assert pending[0]["source_note_ids"] == [second, first]
+    assert "gameplay" in pending[0]["proposed_change"] or "movement" in pending[0]["proposed_change"]

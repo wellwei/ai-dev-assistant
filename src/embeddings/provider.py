@@ -10,6 +10,19 @@ _SYNONYMS = {
     "重算": ["recalc", "recalculation"],
     "押镖": ["escort"],
     "风险": ["risk"],
+    "移动": ["move", "movement"],
+    "位移": ["move", "movement", "position"],
+    "位置": ["position", "pos", "location"],
+    "坐标": ["position", "pos", "coord", "coordinate"],
+    "同步": ["sync", "synchronize"],
+    "变化": ["change", "update"],
+    "战斗": ["battle", "combat", "fight"],
+    "伤害": ["damage", "hurt", "hp", "attack"],
+    "扣血": ["damage", "hp"],
+    "冲锋": ["charge", "dash", "rush"],
+    "坐骑": ["mount", "mounting", "rider", "horse"],
+    "上马": ["mount", "mounting"],
+    "下马": ["dismount"],
 }
 
 
