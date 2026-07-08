@@ -299,7 +299,7 @@ PYTHONPATH=/Users/cltx/projects/langgraph /Users/cltx/projects/langgraph/venv/bi
 Expected current baseline:
 
 ```text
-100 passed
+101 passed
 ```
 
 For focused work, run the relevant test file first, then the full suite before final response.

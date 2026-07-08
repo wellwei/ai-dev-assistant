@@ -1,106 +1,129 @@
 # Agent Guide for This LangGraph Project
 
-This repository is a LangGraph-based project knowledge assistant for the target C++ project:
+## Project Overview
 
-```text
-/Users/cltx/projects/escort_server/doll_escort_game_svr
+This repository builds a LangGraph-based project knowledge assistant for the read-only target C++ project at `/Users/cltx/projects/escort_server/doll_escort_game_svr`. It indexes the target project into SQLite, answers project questions, supports read-only development advice, and keeps research/project memory separate from current source evidence.
+
+Primary stack: Python, LangGraph, SQLite, pytest, local deterministic retrieval, and agent-facing CLI scripts.
+
+## Document Routing
+
+Keep context small. Read only what the task needs.
+
+| Need | Read |
+| --- | --- |
+| Entry rules, safety, commands, and routing | `AGENTS.md` |
+| Target-project investigation workflow | `docs/superpowers/guides/agent-workflows.md` |
+| LangGraph, LangChain, deep agents, RAG, persistence, CLI, human-in-the-loop, middleware, or swarm guidance | Matching `config/skills/<skill-name>/SKILL.md` |
+| Full architecture or background not covered by focused docs | Relevant section of `README.md` only |
+| Design history, behavior changes, or verification records | Today's `docs/superpowers/history/YYYY-MM-DD-development-history.md` |
+
+Do not read `README.md` by default. Use it only when a focused document or current source does not answer the question.
+
+## Project Skills
+
+Project-level skills live under `config/skills/`. Codex and similar agents should treat them as task-specific project documentation, not as automatically loaded tools.
+
+Read the relevant skill before answering or editing when the task concerns:
+
+- `config/skills/langgraph-fundamentals/SKILL.md` — LangGraph graph concepts and patterns.
+- `config/skills/langgraph-cli/SKILL.md` — LangGraph CLI usage.
+- `config/skills/langgraph-persistence/SKILL.md` — checkpointing, persistence, threads, and state storage.
+- `config/skills/langgraph-human-in-the-loop/SKILL.md` — interrupts, approvals, and human review loops.
+- `config/skills/langchain-fundamentals/SKILL.md` — LangChain concepts.
+- `config/skills/langchain-dependencies/SKILL.md` — LangChain package/dependency choices.
+- `config/skills/langchain-middleware/SKILL.md` — middleware behavior.
+- `config/skills/langchain-rag/SKILL.md` — RAG design and retrieval behavior.
+- `config/skills/deep-agents-core/SKILL.md`, `deep-agents-memory`, `deep-agents-orchestration`, or `managed-deep-agents` — deep agent design.
+- `config/skills/swarm/SKILL.md` — swarm patterns and its supporting scripts.
+- `config/skills/ecosystem-primer/SKILL.md` — ecosystem orientation.
+
+`skills-lock.json` records imported skill paths and hashes. Ordinary tasks do not need to read it unless verifying the skill import.
+
+## Development Environment
+
+Use the repository virtual environment when available:
+
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph \
+/Users/cltx/projects/langgraph/venv/bin/python -m pytest tests -q
 ```
 
-Use this file as the short operating guide for Codex, Claude Code, and similar agents. For full architecture, graph flow, schema notes, and examples, read `README.md`.
+Important environment defaults are defined in `src/config.py` and `.env.example`:
 
-## First Steps
+- `TARGET_PROJECT_ROOT=/Users/cltx/projects/escort_server/doll_escort_game_svr`
+- `CHECKPOINT_DB=./checkpoints/langgraph.sqlite`
+- `PROJECT_INDEX_DB=./checkpoints/project_index.sqlite`
+- `MODEL_NAME=gpt-4o`
 
-1. Read `README.md`.
-2. Check `langgraph.json` for exposed graph names.
-3. Read the latest dated file under `docs/superpowers/history/`.
-4. Inspect relevant tests before changing behavior.
-5. Prefer current implementation evidence over comments, docs, names, historical notes, and project memory.
+## Build and Test Commands
 
-## Hard Rules
+Focused tests:
 
-- Treat the target C++ project as read-only by default.
-- Do not edit, build, commit, push, clean, delete, or otherwise mutate the target C++ project unless the user explicitly approves that action.
-- This LangGraph repository may be modified when implementing the assistant itself.
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph \
+/Users/cltx/projects/langgraph/venv/bin/python -m pytest tests/test_agent_guides.py -q
+```
+
+Full tests:
+
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph \
+/Users/cltx/projects/langgraph/venv/bin/python -m pytest tests -q
+```
+
+Retrieval evaluation after ranking, synonym, embedding, or memory-retrieval changes:
+
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph \
+/Users/cltx/projects/langgraph/venv/bin/python scripts/run_retrieval_eval.py \
+--db /Users/cltx/projects/langgraph/checkpoints/project_index.sqlite \
+--cases /Users/cltx/projects/langgraph/tests/fixtures/retrieval_eval
+```
+
+Search-only target-project evidence:
+
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph \
+/Users/cltx/projects/langgraph/venv/bin/python scripts/search_project.py \
+--query "移动位置同步" --output json
+```
+
+Synthesized assistant answer:
+
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph \
+/Users/cltx/projects/langgraph/venv/bin/python scripts/ask_project.py \
+--question "移动位置同步、战斗伤害、坐骑逻辑分别在哪里？" --output text
+```
+
+## Code Style Guidelines
+
 - Internal model-facing text must be English, including prompts, `analysis`, workflow steps, memory summaries, and suggested commands.
-- Final user-facing answers must be Chinese.
-- Do not paste English internal analysis into final Chinese answers.
-- Current indexed implementation evidence outranks project memories and historical research notes.
-- Historical notes are context only; label them as historical assistant conclusions if surfaced.
-- Update the correct dated file in `docs/superpowers/history/` for every code, behavior, retrieval, schema, safety, or documentation rule change.
+- Agent-facing answers, CLI output, documentation, tests, and assistant-written summaries should be English by default.
+- Use Chinese only when the user explicitly requests Chinese end-user-facing output.
+- Do not expose raw internal `analysis` in final answers or CLI JSON output.
+- Prefer current implementation evidence over comments, docs, names, historical notes, and project memory.
+- When changing retrieval, memory, CLI behavior, graph flow, schemas, or safety rules, update or add focused tests.
 
-## Entrypoints
+## Git and PR Workflow
 
-`langgraph.json` exposes:
+- Do not commit, push, or create a PR unless the user explicitly asks.
+- Before claiming completion, run focused verification for the changed area.
+- Run the full test suite before broad behavior claims.
+- Record every code, behavior, retrieval, schema, safety, or documentation rule change in today's dated history file.
 
-- `assistant`: `./src/graph.py:create_graph`
-- `indexer`: `./src/index_graph.py:create_index_graph`
+## Boundaries
 
-Use `assistant` for project Q&A, requirement research, and read-only development advice.
-Use `indexer` only when refreshing the SQLite project index is appropriate or approved.
+- Treat `/Users/cltx/projects/escort_server/doll_escort_game_svr` as read-only by default.
+- Do not edit, build, commit, push, clean, delete, regenerate, or otherwise mutate the target C++ project unless the user explicitly approves that action.
+- This LangGraph repository may be modified when implementing the assistant itself.
+- Use `assistant` from `langgraph.json` for project Q&A, requirement research, and read-only development advice.
+- Use `indexer` only when refreshing the SQLite project index is appropriate or approved.
+- Do not continue Hermes Agent integration work. The existing Hermes no-op boundary is historical and disabled; keep it inert until an explicit cleanup removes it.
+- Self-improvement proposals must remain proposals until an explicit review and approval workflow exists.
+- Future memory and self-improvement work should use a self-developed project memory layer, not Hermes Agent.
 
-## Workflow Recipes
+## Development History Rule
 
-For the default target-project workflow, read `docs/superpowers/guides/agent-workflows.md`. It explains when to use `scripts/search_project.py`, when to inspect current source with `Read`, when to use `scripts/ask_project.py`, and how to separate current source evidence from index summaries, `research_notes`, and `project_memories`.
-
-## Agent-Friendly CLI
-
-Use the CLI when an agent needs to ask the local project knowledge assistant from a shell command.
-
-Use `scripts/search_project.py` when you need ranked paths/evidence only, before reading files or building a prompt:
-
-```bash
-PYTHONPATH=/Users/cltx/projects/langgraph \
-/Users/cltx/projects/langgraph/venv/bin/python \
-/Users/cltx/projects/langgraph/scripts/search_project.py \
---query "移动位置同步" \
---output json
-```
-
-Use `scripts/ask_project.py` when you need a synthesized Chinese answer:
-
-```bash
-PYTHONPATH=/Users/cltx/projects/langgraph \
-/Users/cltx/projects/langgraph/venv/bin/python \
-/Users/cltx/projects/langgraph/scripts/ask_project.py \
---question "移动位置同步、战斗伤害、坐骑逻辑分别在哪里？" \
---output text
-```
-
-Use JSON when the caller needs stable machine-facing fields:
-
-```bash
-PYTHONPATH=/Users/cltx/projects/langgraph \
-/Users/cltx/projects/langgraph/venv/bin/python \
-/Users/cltx/projects/langgraph/scripts/ask_project.py \
---question "我要修改移动位置同步逻辑，影响哪些文件？" \
---output json
-```
-
-Expected behavior:
-
-- `search_project.py --output text|json` prints ranked paths and evidence only, without invoking the assistant graph or persisting research notes.
-- `ask_project.py --output text` prints only the final Chinese `answer`.
-- `ask_project.py --output json` prints stable fields such as `answer`, `request_type`, `related_paths`, `approval_required`, `open_questions`, `suggested_commands`, `research_note_id`, `thread_id`, and `flow_version`.
-- JSON output intentionally excludes internal English `analysis` and raw retrieved context.
-- Missing index DB or empty question returns exit code `2`.
-- Runtime graph failures return exit code `1`.
-
-If CLI behavior differs, inspect `scripts/ask_project.py` and trust the implementation.
-
-## Working With Evidence
-
-When answering target-project questions:
-
-1. Retrieve current project context first.
-2. Separate current implementation evidence from project memory and historical research notes.
-3. Prefer exact paths, symbols, and implementation side-effect evidence over weak semantic matches.
-4. If evidence is weak, stale, or conflicting, say so in Chinese and identify what should be inspected next.
-5. Do not invent facts from memory or names alone.
-
-## Testing and Documentation
-
-- Add or update tests when changing retrieval, memory, CLI behavior, graph flow, schemas, or safety rules.
-- Run focused tests for the changed area first.
-- Run retrieval evaluation before and after ranking, synonym, embedding, or memory-retrieval changes.
-- Run the full test suite before claiming completion.
-- Use the active date's history file, for example `docs/superpowers/history/2026-07-07-development-history.md` for current work.
+Use today's date from the session context for history entries. Write to `docs/superpowers/history/YYYY-MM-DD-development-history.md`; create the file if it does not exist. Never append a new entry to the latest existing history file when that file is from a prior day.

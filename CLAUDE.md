@@ -1,7 +1,7 @@
 # Claude Code Instructions
 
-Read `AGENTS.md` first. It is the canonical short agent guide for this repository.
+Read `AGENTS.md` first. It is the canonical low-context agent guide for this repository.
 
-Then read `README.md` for full architecture, graph entrypoints, CLI usage, testing guidance, and project rules.
+Do not read `README.md` by default. Follow the document routing table in `AGENTS.md` and read only the focused document or README section needed for the current task.
 
-Do not duplicate or reinterpret the rules here; keep this file as a pointer so Claude Code and other agents share one source of truth.
+Keep this file as a pointer so Claude Code, Codex, and other agents share one source of truth.

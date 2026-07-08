@@ -103,6 +103,41 @@ Every implementation change, behavior change, design update, retrieval or rankin
   - If the test baseline becomes noisy again, replace the fixed README count with a pointer to the latest dated history and the full-suite command.
   - The combined `ask_project.py` smoke question still favored battle-related paths in `related_paths`; future retrieval/synthesis tuning should improve balanced multi-topic answers for movement + combat + mount questions while preserving the search CLI's stronger ranked coverage.
 
+### English Agent-Facing Multi-Topic Assistant Q&A
+
+- Date/session: 2026-07-07.
+- Change summary: Converted assistant answers and agent-facing docs from default Chinese output to English, and added internal topic-aware retrieval/synthesis for multi-topic project questions.
+- Completed or modified functionality:
+  - Added internal gameplay topic detection for movement/position sync, combat damage, and mount logic.
+  - Added per-topic retrieval using existing hybrid search with keyword fallback, then merged related paths in topic-balanced order without exposing a new JSON field.
+  - Updated assistant synthesis to render English agent-facing answers, including topic sections when topic metadata is present.
+  - Preserved the public `ask_project.py --output json` contract and intentionally did not expose `topic_groups`.
+  - Updated tests from Chinese-answer assertions to English agent-facing assertions.
+  - Updated `AGENTS.md`, `README.md`, and `docs/superpowers/guides/agent-workflows.md` to document English output by default.
+- Affected files or modules:
+  - `src/nodes/assistant_nodes.py`
+  - `tests/test_assistant_graph.py`
+  - `tests/test_assistant_cli.py`
+  - `tests/test_index_graph.py`
+  - `AGENTS.md`
+  - `README.md`
+  - `docs/superpowers/guides/agent-workflows.md`
+  - `docs/superpowers/specs/2026-07-07-multi-topic-assistant-qa-design.md`
+  - `docs/superpowers/history/2026-07-07-development-history.md`
+- Verification:
+  - Focused assistant and CLI tests passed with `20 passed` using `PYTHONPATH=/Users/cltx/projects/langgraph/.claude/worktrees/multi-topic-agent-qa /Users/cltx/projects/langgraph/venv/bin/python -m pytest /Users/cltx/projects/langgraph/.claude/worktrees/multi-topic-agent-qa/tests/test_assistant_graph.py /Users/cltx/projects/langgraph/.claude/worktrees/multi-topic-agent-qa/tests/test_assistant_cli.py -q`.
+  - Agent guide tests passed with `3 passed` using `PYTHONPATH=/Users/cltx/projects/langgraph/.claude/worktrees/multi-topic-agent-qa /Users/cltx/projects/langgraph/venv/bin/python -m pytest /Users/cltx/projects/langgraph/.claude/worktrees/multi-topic-agent-qa/tests/test_agent_guides.py -q`.
+  - Retrieval evaluation passed with `15/15 passed` using the worktree `scripts/run_retrieval_eval.py`, worktree `checkpoints/project_index.sqlite`, and worktree retrieval fixtures.
+  - Full test suite initially failed because `tests/test_index_graph.py::test_index_then_assistant_answer_end_to_end` still asserted Chinese output (`置信度`, `注释`, `命名`) after the assistant was converted to English. The test was updated to assert English output (`Confidence`, `comment`, `name`) and passed with `1 passed` in focused rerun.
+  - Full test suite passed with `93 passed` using `PYTHONPATH=/Users/cltx/projects/langgraph/.claude/worktrees/multi-topic-agent-qa /Users/cltx/projects/langgraph/venv/bin/python -m pytest /Users/cltx/projects/langgraph/.claude/worktrees/multi-topic-agent-qa/tests -q`.
+  - README test baseline was updated from `91 passed` to `93 passed`.
+  - Search CLI smoke test returned `result_count` 8 and movement/sync ranked paths led by `src/task/sync/process_sync_rs_task.cpp` and `src/task/tcp/process_cli_role_move_tcp_task.cpp`.
+  - Ask CLI multi-topic JSON smoke test returned English topic sections for `Movement / position sync`, `Combat damage`, and `Mount logic`, stable JSON fields, and no `topic_groups` field.
+  - Target C++ project status was checked read-only with `git -C /Users/cltx/projects/escort_server/doll_escort_game_svr status --short`; existing status was `M CMakeLists.txt` and `?? ../.idea/`. No target-project mutations were made by this work.
+- Follow-ups:
+  - Consider exposing `topic_groups` in JSON only after the internal topic grouping has proven stable.
+  - Extend topic detection beyond movement/combat/mount when real repeated questions justify it.
+
 ### Search-Only Project Retrieval CLI
 
 - Date/session: 2026-07-07.
@@ -130,46 +165,89 @@ Every implementation change, behavior change, design update, retrieval or rankin
 - Follow-ups:
   - Consider adding a future `--verbose` mode for full matched symbol details if agents need symbol-level routing.
 
-### Main Branch Multi-Topic QA Coverage Port
+### Task 6 English Flat and Topic-Section Answer Synthesis
 
-- Date/session: 2026-07-08.
-- Change summary: Compared `main` against the completed `worktree-multi-topic-agent-qa` branch and ported missing runtime behavior and regression coverage to latest `main`.
+- Date/session: 2026-07-07.
+- Change summary: Converted assistant answer synthesis to English flat and topic-section output for the Task 6 slice of multi-topic assistant QA work.
 - Completed or modified functionality:
-  - Ported English-by-default assistant answer synthesis and topic-section rendering for movement/position sync, combat damage, and mount logic.
-  - Ported topic-aware retrieval that preserves original user constraints while using per-topic query expansion and globally unique `related_paths`.
-  - Ported ASCII token-boundary topic detection so keywords such as `move` do not match `remove`.
-  - Ported per-topic evidence grouping that allows shared evidence to appear in multiple relevant topic sections while keeping public JSON flat and stable.
-  - Ported keyword retrieval fixes for camelCase/PascalCase token recall, English route intent phrases, gameplay ranking boosts, and non-mutating search paths.
-  - Ported the search-only CLI legacy-database read-only behavior, embedding model version bump, and confirmed-Chinese-note self-improvement guard.
-  - Ported missing assistant, CLI, retriever, search CLI, self-improvement, embedding, and agent-guide regression tests from the worktree branch.
+  - Added topic-context helper functions for detecting topic-labeled retrieval results, preserving first-seen topic order, and rendering grouped evidence sections.
+  - Replaced empty-result answer synthesis with English conclusion, basis, risk, next-step, suggested-action, and open-question wording.
+  - Replaced the main answer construction with English flat output for normal retrieval and topic-section output when retrieved context has `topic_label`.
+  - Updated development-advice recommendation, workflow approval text, and memory/action/question section headings to English.
+  - Preserved the existing public JSON contract; no `topic_groups` or other new output fields were added.
+  - Adjusted two direct synthesis strings to satisfy existing graph assertions: retained `Request type: Project Q&A` in flat answers and kept project-memory user summaries from leaking the internal phrase `Long-term project memory only`.
 - Affected files or modules:
-  - `AGENTS.md`
-  - `README.md`
-  - `docs/superpowers/guides/agent-workflows.md`
-  - `scripts/search_project.py`
-  - `src/embeddings/provider.py`
   - `src/nodes/assistant_nodes.py`
-  - `src/retriever/hybrid_search.py`
+  - `docs/superpowers/history/2026-07-07-development-history.md`
+- Verification:
+  - Focused assistant graph tests passed with `14 passed` using `PYTHONPATH=/Users/cltx/projects/langgraph /Users/cltx/projects/langgraph/venv/bin/python -m pytest /Users/cltx/projects/langgraph/.claude/worktrees/multi-topic-agent-qa/tests/test_assistant_graph.py -q`.
+- Follow-ups:
+  - None for this task.
+
+### Task 6 Review Fixes: Topic Deduplication and Empty-Result Wording
+
+- Date/session: 2026-07-07.
+- Change summary: Fixed Task 6 review findings in assistant answer synthesis.
+- Completed or modified functionality:
+  - Updated `_group_context_by_topic()` to deduplicate retrieved context by first-seen path before adding evidence to topic sections, preserving deterministic input order and first-seen topic order.
+  - Reworded empty-result answer basis text so user-facing output no longer refers to internal assistant analysis framing.
+  - Preserved Task 4 topic detection and retrieval helpers unchanged.
+- Affected files or modules:
+  - `src/nodes/assistant_nodes.py`
+  - `docs/superpowers/history/2026-07-07-development-history.md`
+- Verification:
+  - Focused assistant graph tests passed with `14 passed` using `PYTHONPATH=/Users/cltx/projects/langgraph /Users/cltx/projects/langgraph/venv/bin/python -m pytest /Users/cltx/projects/langgraph/.claude/worktrees/multi-topic-agent-qa/tests/test_assistant_graph.py -q`.
+- Follow-ups:
+  - None.
+
+
+- Date/session: 2026-07-07.
+- Change summary: Converted assistant response helper rendering functions from Chinese labels to English internal helper output as the Task 5 slice of multi-topic assistant QA work.
+- Completed or modified functionality:
+  - Updated `_request_type_label()` to return English request type labels.
+  - Updated `_context_summary_for_user()` to render indexed hit summaries, key symbols, evidence, inconsistency flags, and confidence in English.
+  - Updated suggested-command and open-question label helpers to return English agent-facing text.
+  - Updated research-memory and project-memory summary helpers to render English provenance and evidence-priority warnings.
+  - Intentionally did not rewrite `synthesize_response_node()` answer structure or topic-section rendering; that remains Task 6 scope.
+- Affected files or modules:
+  - `src/nodes/assistant_nodes.py`
+  - `docs/superpowers/history/2026-07-07-development-history.md`
+- Verification:
+  - Baseline assistant graph tests failed before implementation with 7 failures and 7 passes, mostly due to English answer-structure expectations not yet implemented.
+  - Focused assistant graph tests after helper conversion ran with 6 failures and 8 passes; remaining failures are in `synthesize_response_node()` answer structure, section headings, and topic-section rendering owned by Task 6.
+- Follow-ups:
+  - Task 6 should convert `synthesize_response_node()` structure and topic-section rendering, then refresh the assistant graph test baseline.
+
+
+### Final Review Fixes Before Commit
+
+- Date/session: 2026-07-07.
+- Change summary: Fixed final review blockers found after the English multi-topic assistant implementation and search CLI additions.
+- Completed or modified functionality:
+  - Updated assistant gameplay topic detection to require ASCII token-boundary matches for ASCII keywords, preventing terms such as `move` from matching `remove` while preserving CJK substring matching.
+  - Updated multi-topic retrieval to combine each topic query with the original user question so constraints such as `押镖车` are preserved while retaining topic-specific recall.
+  - Updated topic-section grouping to deduplicate evidence within each topic section only, so shared strong evidence can appear under multiple relevant topic headings while `related_paths` remains globally unique.
+  - Updated keyword retrieval tokenization to split camelCase and PascalCase identifiers, restoring exact-token recall for symbols such as `syncRolePosition` and `updateDamageMeData`.
+  - Restored explicit English route-intent phrase handling for `sea route`, `second route`, `client`, and `recalculation` queries.
+  - Updated gameplay retrieval-gap proposal detection so confirmed Chinese notes such as `已确认` are not treated as unresolved uncertainty.
+  - Added non-mutating search mode switches to keyword, vector, and hybrid retrieval, and made `scripts/search_project.py` use them so search-only CLI calls against existing legacy SQLite files do not initialize or migrate schema.
+- Affected files or modules:
+  - `src/nodes/assistant_nodes.py`
   - `src/retriever/keyword_search.py`
   - `src/retriever/vector_search.py`
+  - `src/retriever/hybrid_search.py`
   - `src/self_improvement/proposals.py`
-  - `tests/test_agent_guides.py`
-  - `tests/test_assistant_cli.py`
-  - `tests/test_assistant_graph.py`
-  - `tests/test_embeddings_provider.py`
-  - `tests/test_retriever.py`
-  - `tests/test_search_project_cli.py`
-  - `tests/test_self_improvement.py`
-  - `tests/test_index_graph.py`
+  - `scripts/search_project.py`
+  - `docs/superpowers/history/2026-07-07-development-history.md`
 - Verification:
-  - Focused missing-behavior regression tests passed with `5 passed`.
-  - Affected assistant, CLI, retriever, search CLI, self-improvement, embedding, and retrieval-evaluation suites passed with `68 passed`.
-  - Retrieval evaluation passed with `15/15 passed`.
-  - Full test suite initially failed because `tests/test_index_graph.py::test_index_then_assistant_answer_end_to_end` still asserted Chinese output (`置信度`, `注释`, `命名`) after the main branch received English answer synthesis; the test was updated to assert `Confidence` and `comment`/`name`, then passed with `1 passed`.
-  - Full test suite passed with `100 passed`.
+  - RED baseline for the final blocker regressions failed with 5 failures: ASCII topic boundary, shared topic evidence, camelCase retrieval recall, confirmed Chinese note filtering, and search CLI legacy DB non-mutation.
+  - After fixes, the same focused regression command passed with `5 passed`.
+  - Related review coverage for constrained multi-topic retrieval, English multi-topic assistant output, CLI JSON contract stability, and English route-intent phrases passed with `4 passed`.
+- Follow-ups:
+  - Affected verification suites passed with `68 passed`.
+  - Retrieval evaluation passed with `15/15 passed` after ranking tuning for movement sync, combat damage, escort follow distance, and mount CLI summoning coverage.
+  - Full test suite passed with `101 passed`.
   - Search CLI smoke test for `移动位置同步` returned `result_count` 8 with `src/task/sync/process_sync_rs_task.cpp` and `src/task/tcp/process_cli_role_move_tcp_task.cpp` ranked first and second.
   - Ask CLI multi-topic JSON smoke test returned stable JSON fields, English topic sections, no `topic_groups` field, and persisted a research note as designed.
-  - `git diff --check` passed with no whitespace errors.
-  - README test baseline was updated from `101 passed` to `100 passed` after preserving latest main guide-skill tests.
-- Follow-ups:
-  - After the main branch commit is verified, the old `worktree-multi-topic-agent-qa` worktree can be removed if no additional diffs are needed.
+  - README test baseline was updated from `93 passed` to `101 passed`.
+  - Target C++ project status was checked read-only with `git -C /Users/cltx/projects/escort_server/doll_escort_game_svr status --short`; existing status was `M CMakeLists.txt`, `M src/rtb_models/rtb_unit_character.h`, and `?? ../.idea/`. No target-project mutations were made by this work.
