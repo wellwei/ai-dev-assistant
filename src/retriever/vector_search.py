@@ -51,10 +51,12 @@ def search_vector_index(
     *,
     limit: int = 8,
     embedding_model: str = MODEL_NAME,
+    initialize_schema: bool = True,
 ) -> list[dict]:
     query_vector = embed_text(query)
     with connect_db(db_path) as conn:
-        init_schema(conn)
+        if initialize_schema:
+            init_schema(conn)
         rows = conn.execute(
             "SELECT * FROM embeddings WHERE embedding_model = ?",
             (embedding_model,),

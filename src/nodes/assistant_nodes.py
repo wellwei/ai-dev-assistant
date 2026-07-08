@@ -1,4 +1,5 @@
 import json
+import re
 
 from src.config import settings
 from src.indexer.models import ResearchNote
@@ -13,6 +14,32 @@ from src.workflows.registry import select_workflow
 
 
 ASSISTANT_FLOW_VERSION = "2026-07-02.foundation-v1"
+
+TOPIC_RESULT_LIMIT = 4
+
+GAMEPLAY_TOPICS = [
+    {
+        "topic_id": "movement_position_sync",
+        "topic_label": "Movement / position sync",
+        "query": "movement position sync move 移动 位置 同步",
+        "keywords": ("movement", "move", "position", "sync", "移动", "位置", "同步"),
+        "context_keywords": (),
+    },
+    {
+        "topic_id": "combat_damage",
+        "topic_label": "Combat damage",
+        "query": "combat battle damage hp hit 战斗 伤害 扣血 命中",
+        "keywords": ("combat", "battle", "damage", "hp", "hit", "战斗", "伤害", "扣血", "命中"),
+        "context_keywords": (),
+    },
+    {
+        "topic_id": "mount_logic",
+        "topic_label": "Mount logic",
+        "query": "mount horse ride dismount speed sync 坐骑 上马 下马 速度 同步",
+        "keywords": ("mount", "horse", "ride", "dismount", "坐骑", "上马", "下马"),
+        "context_keywords": ("speed", "速度", "sync", "同步"),
+    },
+]
 
 
 def _repo(state: AssistantState, default_repo: ProjectIndexRepository | None = None) -> ProjectIndexRepository:
@@ -80,16 +107,75 @@ def retrieve_project_memories_node(state: AssistantState, repo: ProjectIndexRepo
     }
 
 
+def _question_has_topic_keyword(question: str, keyword: str) -> bool:
+    if re.fullmatch(r"[A-Za-z0-9_]+", keyword):
+        return keyword.lower() in {token.lower() for token in re.findall(r"[A-Za-z0-9_]+", question)}
+    return keyword in question.lower()
+
+
+def _detect_gameplay_topics(question: str) -> list[dict]:
+    topics: list[dict] = []
+    for topic in GAMEPLAY_TOPICS:
+        if any(_question_has_topic_keyword(question, keyword) for keyword in topic["keywords"]):
+            topics.append(topic)
+    return topics
+
+
+def _topic_search_query(question: str, topic: dict) -> str:
+    return f"{topic['query']} {question}".strip()
+
+
+def _search_project_context(repository: ProjectIndexRepository, query: str) -> list[dict]:
+    try:
+        return hybrid_search_project(repository.db_path, query)
+    except Exception:
+        return search_project_index(repository.db_path, query)
+
+
+def _topic_aware_project_context(repository: ProjectIndexRepository, question: str) -> list[dict]:
+    topics = _detect_gameplay_topics(question)
+    if len(topics) < 2:
+        return _search_project_context(repository, question)
+
+    merged: list[dict] = []
+    seen_paths: set[str] = set()
+    for topic in topics:
+        topic_query = _topic_search_query(question, topic)
+        for item in _search_project_context(repository, topic_query)[:TOPIC_RESULT_LIMIT]:
+            path = item.get("path")
+            if not path:
+                continue
+            enriched = dict(item)
+            enriched["topic_id"] = topic["topic_id"]
+            enriched["topic_label"] = topic["topic_label"]
+            enriched["topic_query"] = topic_query
+            if path in seen_paths:
+                enriched["topic_duplicate"] = True
+            else:
+                seen_paths.add(path)
+            merged.append(enriched)
+    return merged
+
+
+def _unique_paths(results: list[dict]) -> list[str]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    for item in results:
+        path = item.get("path")
+        if not path or path in seen:
+            continue
+        paths.append(path)
+        seen.add(path)
+    return paths
+
+
 def retrieve_project_context_node(state: AssistantState, repo: ProjectIndexRepository | None = None) -> dict:
     repository = _repo(state, repo)
     question = state.get("question", "")
-    try:
-        results = hybrid_search_project(repository.db_path, question)
-    except Exception:
-        results = search_project_index(repository.db_path, question)
+    results = _topic_aware_project_context(repository, question)
     return {
         "retrieved_context": results,
-        "related_paths": [item["path"] for item in results],
+        "related_paths": _unique_paths(results),
     }
 
 
@@ -162,11 +248,11 @@ def analyze_request_node(state: AssistantState) -> dict:
 
 def _request_type_label(request_type: str) -> str:
     labels = {
-        "project_qa": "项目问答",
-        "requirement_research": "需求调研",
-        "development_advice": "开发建议",
-        "index_request": "索引刷新",
-        "unclear": "信息不明确",
+        "project_qa": "Project Q&A",
+        "requirement_research": "Requirement research",
+        "development_advice": "Development advice",
+        "index_request": "Index refresh",
+        "unclear": "Unclear request",
     }
     return labels.get(request_type, request_type)
 
@@ -181,9 +267,10 @@ def _context_summary_for_user(results: list[dict]) -> list[str]:
         inconsistencies = item.get("inconsistencies") or "none"
         evidence = item.get("evidence") or "indexed summary"
         key_symbols = _key_symbols_for_user(item)
-        symbol_text = f"；关键函数/符号={', '.join(f'`{name}`' for name in key_symbols)}" if key_symbols else ""
+        symbol_text = f" Key symbols: {', '.join(f'`{name}`' for name in key_symbols)}." if key_symbols else ""
         lines.append(
-            f"- `{path}`：索引命中{symbol_text}；证据={evidence}；不一致标记={inconsistencies}；confidence={confidence}。"
+            f"- `{path}`: indexed hit.{symbol_text} Evidence: {evidence}. "
+            f"Inconsistencies: {inconsistencies}. Confidence: {confidence}."
         )
     return lines
 
@@ -214,12 +301,46 @@ def _key_symbols_for_user(item: dict, limit: int = 6) -> list[str]:
     return symbols
 
 
+def _has_topic_context(results: list[dict]) -> bool:
+    return any(item.get("topic_label") for item in results)
+
+
+def _group_context_by_topic(results: list[dict]) -> list[tuple[str, list[dict]]]:
+    grouped: list[tuple[str, list[dict]]] = []
+    by_label: dict[str, list[dict]] = {}
+    seen_paths_by_label: dict[str, set[str]] = {}
+    for item in results:
+        path = item.get("path")
+        label = item.get("topic_label") or "Other relevant evidence"
+        if label not in by_label:
+            by_label[label] = []
+            seen_paths_by_label[label] = set()
+            grouped.append((label, by_label[label]))
+        if path:
+            if path in seen_paths_by_label[label]:
+                continue
+            seen_paths_by_label[label].add(path)
+        by_label[label].append(item)
+    return grouped
+
+
+def _topic_context_summary_for_user(results: list[dict]) -> list[str]:
+    lines: list[str] = []
+    for label, items in _group_context_by_topic(results):
+        lines.extend([label, *_context_summary_for_user(items), ""])
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
 def _suggested_command_label(command: str) -> str:
     labels = {
-        "Run index_graph to scan the target project.": "运行 index_graph 扫描目标项目。",
-        "Read the relevant files locally to confirm implementation evidence.": "先局部阅读相关文件，确认实际实现证据。",
+        "Run index_graph to scan the target project.": "Run index_graph to refresh the target project index.",
+        "Read the relevant files locally to confirm implementation evidence.": (
+            "Read the relevant files locally to confirm implementation evidence."
+        ),
         "If a build is needed, ask the user before running company project build commands.": (
-            "如需构建，先征得用户确认，再运行公司项目构建命令。"
+            "If a build is needed, ask the user before running target-project build commands."
         ),
     }
     return labels.get(command, command)
@@ -228,10 +349,10 @@ def _suggested_command_label(command: str) -> str:
 def _open_question_label(question: str) -> str:
     labels = {
         "Which business area, file, or requirement do you want to investigate?": (
-            "请说明你想了解的业务点、文件或需求背景。"
+            "Which business area, file, or requirement should be investigated?"
         ),
         "Should the index_graph be run to refresh the project knowledge base?": (
-            "是否先运行 index_graph 刷新项目知识库？"
+            "Should index_graph be run to refresh the project knowledge base?"
         ),
     }
     return labels.get(question, question)
@@ -242,8 +363,11 @@ def _memory_summary_for_user(memory: list[dict]) -> list[str]:
     for item in memory:
         note_id = item.get("id")
         paths = item.get("related_paths") or []
-        summary = item.get("user_answer_summary") or item.get("answer_summary") or "历史调研记录。"
-        lines.append(f"- note#{note_id} 曾涉及 {', '.join(paths) or '未记录路径'}：{summary} 这是历史助手结论，当前实现证据优先。")
+        summary = item.get("user_answer_summary") or item.get("answer_summary") or "Historical research note."
+        lines.append(
+            f"- note#{note_id} covered {', '.join(paths) or 'no recorded paths'}: "
+            f"{summary} Historical assistant conclusion; current indexed implementation evidence wins."
+        )
     return lines
 
 
@@ -253,10 +377,10 @@ def _project_memory_summary_for_user(memories: list[dict]) -> list[str]:
         memory_id = item.get("id")
         memory_type = item.get("memory_type") or "project_memory"
         paths = item.get("related_paths") or []
-        summary = item.get("summary") or "长期项目记忆。"
+        summary = item.get("summary") or "Long-term project memory."
         lines.append(
-            f"- memory#{memory_id}（{memory_type}）涉及 {', '.join(paths) or '未记录路径'}："
-            f"{summary} 这是长期项目记忆，仅供参考；当前实现索引证据优先。"
+            f"- memory#{memory_id} ({memory_type}) covers {', '.join(paths) or 'no recorded paths'}: "
+            f"{summary} current indexed implementation evidence wins."
         )
     return lines
 
@@ -274,54 +398,73 @@ def synthesize_response_node(state: AssistantState) -> dict:
 
     if not related_paths:
         answer = (
-            "结论：当前索引中没有找到足够信息。\n\n"
-            "依据：助手内部分析认为问题不清楚，或当前 SQLite 项目索引没有匹配到足够上下文。\n\n"
-            "风险/不确定性：不能根据空索引编造项目结构。\n\n"
-            "下一步建议：先刷新项目索引，或提供更具体的模块、文件、业务关键词。"
+            "Conclusion: The current index does not contain enough information to answer this request.\n\n"
+            "Basis: The question was unclear or the current SQLite project index did not return matching project context.\n\n"
+            "Risk: Do not invent project structure from an empty result set.\n\n"
+            "Next step: Refresh the project index or provide a more specific module, file, or business keyword."
         )
         if suggested_commands:
-            answer += "\n\n建议验证命令/动作：\n" + "\n".join(
+            answer += "\n\nSuggested verification actions:\n" + "\n".join(
                 f"- {_suggested_command_label(command)}" for command in suggested_commands
             )
         if open_questions:
-            answer += "\n\n待确认问题：\n" + "\n".join(
+            answer += "\n\nOpen questions:\n" + "\n".join(
                 f"- {_open_question_label(question)}" for question in open_questions
             )
         return {"answer": answer}
 
-    answer_lines = [
-        f"结论：这是{_request_type_label(request_type)}请求，相关信息主要集中在以下文件：{', '.join(related_paths)}。",
-        "",
-        "依据：以下结论来自 SQLite 项目索引中的实现摘要、符号扫描、副作用线索和一致性标记。",
-        *_context_summary_for_user(retrieved_context),
-        "",
-        "风险/不确定性：老 C++ 项目中注释、文档、函数名和字段名可能过时或误导；以上判断不能只按命名理解，改动前必须核对实际实现和调用链。",
-        "",
-        "置信度：以各文件摘要中的 confidence 为准；包含 inconsistency flags 的位置应降低信任并人工核对。",
-    ]
+    if _has_topic_context(retrieved_context):
+        evidence_lines = _topic_context_summary_for_user(retrieved_context)
+        answer_lines = [
+            f"Conclusion: This {_request_type_label(request_type)} request spans multiple project topics. "
+            f"The most relevant indexed paths are: {', '.join(related_paths)}.",
+            "",
+            "Current indexed evidence:",
+            *evidence_lines,
+            "",
+            "Risks and verification notes: The C++ project may contain stale comments, misleading names, "
+            "and hidden side effects. Verify current source files and call chains before editing.",
+            "",
+            "Confidence: Use each file's confidence and inconsistency flags. Lower confidence for entries with inconsistency flags.",
+        ]
+    else:
+        answer_lines = [
+            f"Conclusion: This is a {_request_type_label(request_type)} request. "
+            f"The most relevant indexed paths are: {', '.join(related_paths)}.",
+            f"Request type: {_request_type_label(request_type)}",
+            "",
+            "Current indexed evidence:",
+            *_context_summary_for_user(retrieved_context),
+            "",
+            "Risks and verification notes: The C++ project may contain stale comments, misleading names, "
+            "and hidden side effects. Verify current source files and call chains before editing.",
+            "",
+            "Confidence: Use each file's confidence and inconsistency flags. Lower confidence for entries with inconsistency flags.",
+        ]
     if request_type == "development_advice":
         answer_lines.extend(
             [
                 "",
-                "建议：不要直接修改公司 C++ 项目。先局部阅读相关文件，确认实际读写、副作用、线程/帧边界，再提出补丁。",
+                "Recommendation: Do not directly modify the target C++ project. First read the relevant files, "
+                "confirm actual reads/writes, side effects, thread/frame boundaries, and then propose a patch."
             ]
         )
     if selected_workflow:
-        approval_text = "需要审批" if approval_required else "默认只读，无需审批"
+        approval_text = "approval required" if approval_required else "read-only by default; no approval required"
         answer_lines.extend(
             [
                 "",
-                f"建议工作流：{selected_workflow.get('workflow_name')}（{approval_text}）。",
+                f"Suggested workflow: {selected_workflow.get('workflow_name')} ({approval_text}).",
             ]
         )
     if retrieved_project_memories:
-        answer_lines.extend(["", "长期项目记忆：", *_project_memory_summary_for_user(retrieved_project_memories)])
+        answer_lines.extend(["", "Project memories:", *_project_memory_summary_for_user(retrieved_project_memories)])
     if retrieved_memory:
-        answer_lines.extend(["", "历史调研记忆：", *_memory_summary_for_user(retrieved_memory)])
+        answer_lines.extend(["", "Prior research memory:", *_memory_summary_for_user(retrieved_memory)])
     if suggested_commands:
-        answer_lines.extend(["", "建议验证命令/动作：", *[f"- {_suggested_command_label(cmd)}" for cmd in suggested_commands]])
+        answer_lines.extend(["", "Suggested verification actions:", *[f"- {_suggested_command_label(cmd)}" for cmd in suggested_commands]])
     if open_questions:
-        answer_lines.extend(["", "待确认问题：", *[f"- {_open_question_label(question)}" for question in open_questions]])
+        answer_lines.extend(["", "Open questions:", *[f"- {_open_question_label(question)}" for question in open_questions]])
 
     return {"answer": "\n".join(answer_lines)}
 

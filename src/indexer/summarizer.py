@@ -14,7 +14,25 @@ def _top_symbol_names(symbols: list[SymbolInfo], limit: int = 8) -> str:
 def _dependency_hints(content: str) -> str:
     hints = []
     lowered = content.lower()
-    for label in ["redis", "db", "map", "route", "frame", "battle", "resource", "packet", "broadcast"]:
+    for label in [
+        "redis",
+        "db",
+        "map",
+        "route",
+        "frame",
+        "battle",
+        "combat",
+        "move",
+        "movement",
+        "position",
+        "sync",
+        "damage",
+        "charge",
+        "mount",
+        "resource",
+        "packet",
+        "broadcast",
+    ]:
         if label in lowered:
             hints.append(label)
     return ", ".join(hints) if hints else "No dependency hints detected."

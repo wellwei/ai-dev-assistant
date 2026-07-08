@@ -32,8 +32,9 @@ docs/superpowers/history/YYYY-MM-DD-development-history.md
 - Do not edit, build, commit, push, clean, delete, or otherwise mutate `/Users/cltx/projects/escort_server/doll_escort_game_svr` by default.
 - It is acceptable to update this repository's SQLite index files under `checkpoints/` when refreshing the project index.
 - Internal model-facing text must be English, including prompts, node analysis, `analysis`, `open_questions`, `suggested_commands`, workflow steps, and internal memory summaries.
-- Final user-facing `answer` text must be Chinese.
-- Do not paste English internal analysis into the final Chinese answer.
+- Agent-facing `answer` text should be English by default.
+- Use Chinese only when the user explicitly requests Chinese end-user-facing output.
+- Do not expose raw internal `analysis` in final answers or CLI JSON output.
 - Current implementation evidence outranks comments, documentation, names, and historical assistant memory.
 - Historical research notes are useful context, but they must be labeled as historical assistant conclusions and must not outrank current index evidence.
 - Development advice is read-only and approval-gated. Do not directly modify the target C++ project from this assistant.
@@ -149,7 +150,7 @@ result = graph.invoke({
 
 ### Assistant Graph
 
-Purpose: classify the user request, select a read-only workflow, retrieve prior research memory, retrieve active long-term project memories, retrieve current project context, analyze, synthesize a Chinese answer, and persist the research note.
+Purpose: classify the user request, select a read-only workflow, retrieve prior research memory, retrieve active long-term project memories, retrieve current project context, analyze, synthesize an English agent-facing answer by default, and persist the research note.
 
 Flow:
 
@@ -173,14 +174,68 @@ from src.assistant_graph import create_assistant_graph
 graph = create_assistant_graph(checkpointer=InMemorySaver())
 result = graph.invoke(
     {
-        "question": "押镖 route 重算在哪里？",
+        "question": "移动位置同步、战斗伤害、坐骑逻辑分别在哪里？",
         "project_root": "/Users/cltx/projects/escort_server/doll_escort_game_svr",
         "index_db_path": "./checkpoints/project_index.sqlite",
-        "thread_id": "doll_escort_game_svr:research:route-recalc",
+        "thread_id": "doll_escort_game_svr:research:gameplay-movement-combat-mount",
     },
-    {"configurable": {"thread_id": "doll_escort_game_svr:research:route-recalc"}},
+    {"configurable": {"thread_id": "doll_escort_game_svr:research:gameplay-movement-combat-mount"}},
 )
 ```
+
+### Agent-friendly CLI
+
+Codex, Claude Code, and terminal users can call the assistant through a thin CLI wrapper around `create_assistant_graph()`:
+
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph \
+/Users/cltx/projects/langgraph/venv/bin/python \
+/Users/cltx/projects/langgraph/scripts/ask_project.py \
+--question "移动位置同步、战斗伤害、坐骑逻辑分别在哪里？" \
+--output text
+```
+
+For machine-readable output:
+
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph \
+/Users/cltx/projects/langgraph/venv/bin/python \
+/Users/cltx/projects/langgraph/scripts/ask_project.py \
+--question "我要修改移动位置同步逻辑，影响哪些文件？" \
+--db /Users/cltx/projects/langgraph/checkpoints/project_index.sqlite \
+--project-root /Users/cltx/projects/escort_server/doll_escort_game_svr \
+--thread-id cli-gameplay-movement \
+--output json
+```
+
+The CLI reads the existing SQLite project index and does not edit, build, commit, push, clean, delete, or otherwise mutate the target C++ project. Text output is only the final English agent-facing `answer`. JSON output exposes stable agent-facing fields such as `answer`, `request_type`, `related_paths`, `approval_required`, and `research_note_id`; it intentionally excludes raw internal `analysis` and raw retrieved context. Development-advice questions preserve `approval_required` and include English read-only safety wording in the answer.
+
+### Search-only CLI
+
+Use `scripts/search_project.py` when Codex, Claude Code, or another agent needs ranked project paths and indexed evidence without a synthesized assistant answer. This CLI reads only `project_index.sqlite`; it does not invoke the assistant graph and does not persist `research_notes`.
+
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph \
+/Users/cltx/projects/langgraph/venv/bin/python \
+/Users/cltx/projects/langgraph/scripts/search_project.py \
+--query "移动位置同步" \
+--limit 8 \
+--output text
+```
+
+For machine-readable ranked paths:
+
+```bash
+PYTHONPATH=/Users/cltx/projects/langgraph \
+/Users/cltx/projects/langgraph/venv/bin/python \
+/Users/cltx/projects/langgraph/scripts/search_project.py \
+--db /Users/cltx/projects/langgraph/checkpoints/project_index.sqlite \
+--query "战斗 伤害 冲锋" \
+--limit 8 \
+--output json
+```
+
+Use `search_project.py` when selecting files to inspect or building an agent prompt. Use `ask_project.py` when you want the assistant graph to synthesize a final English agent-facing answer and record the investigation as a research note.
 
 ## Retrieval and Memory
 
@@ -189,6 +244,8 @@ Retrieval currently combines:
 - Weighted keyword search.
 - Path, symbol, and file-type signals.
 - Business-source boosts and config/build noise penalties.
+- Gameplay-domain synonym and intent boosts for movement position sync, combat, damage, charge, and mount logic.
+- Token-aware ASCII matching so terms such as `move` do not match unrelated identifiers such as `remove`.
 - Local deterministic vector-like retrieval.
 - Prior research memory retrieval.
 
@@ -199,7 +256,7 @@ Project memory uses two layers:
 - `research_notes` record individual assistant investigations and historical answers.
 - `project_memories` store curated long-term project knowledge such as domain concepts, implementation facts, risk notes, open questions, and retrieval lessons.
 
-Current implementation evidence still outranks project memories. Project memories are durable guidance, not source-of-truth replacements for indexed code evidence. Assistant answers may show matched `project_memories` in a separate `长期项目记忆` section, and may show `research_notes` separately as historical assistant memory. The assistant integration is read-only in this version: answers do not automatically generate, promote, update, or demote project memories.
+Current implementation evidence still outranks project memories. Project memories are durable guidance, not source-of-truth replacements for indexed code evidence. Assistant answers may show matched `project_memories` in a separate `Project memories` section, and may show `research_notes` separately as `Prior research memory` / historical assistant memory. The assistant integration is read-only in this version: answers do not automatically generate, promote, update, or demote project memories.
 
 Ranking quality matters. When changing retrieval:
 
@@ -217,7 +274,7 @@ Run retrieval evaluation before and after ranking, synonym, embedding, or memory
 PYTHONPATH=/Users/cltx/projects/langgraph /Users/cltx/projects/langgraph/venv/bin/python /Users/cltx/projects/langgraph/scripts/run_retrieval_eval.py --db /Users/cltx/projects/langgraph/checkpoints/project_index.sqlite --cases /Users/cltx/projects/langgraph/tests/fixtures/retrieval_eval
 ```
 
-Use the report to check that expected business implementation files remain near the top and config/build/noise files do not move ahead of them. If the real project index is stale or missing, ask the user before refreshing it.
+Use the report to check that expected business implementation files remain near the top and config/build/noise files do not move ahead of them. Keep the existing escort route fixtures as regression coverage while adding gameplay-domain fixtures for movement, combat, damage, charge, and mount retrieval. If the real project index is stale or missing, ask the user before refreshing it.
 
 ## Schema and Migrations
 
@@ -242,7 +299,7 @@ PYTHONPATH=/Users/cltx/projects/langgraph /Users/cltx/projects/langgraph/venv/bi
 Expected current baseline:
 
 ```text
-67 passed
+100 passed
 ```
 
 For focused work, run the relevant test file first, then the full suite before final response.
@@ -259,9 +316,13 @@ Before finishing any change:
 
 ## Codex Skills and Claude Code Notes
 
-This repository currently uses a project-level README as the shared operating guide for agents.
+This repository now also provides short auto-discovery guide files:
 
-Codex also supports dedicated skills. If this assistant should become a reusable Codex skill later, use the `skill-creator` guidance and create a concise skill folder such as:
+- `AGENTS.md` is the concise operating guide for Codex, Claude Code, and similar agents. It points to the CLI, graph IDs, hard safety rules, and history discipline.
+- `CLAUDE.md` is a tiny Claude Code pointer that directs Claude Code to `AGENTS.md` and this README.
+- `docs/superpowers/guides/agent-workflows.md` is the default workflow recipe for target-project questions: search with `scripts/search_project.py`, verify key paths with `Read`, synthesize with `scripts/ask_project.py` when useful, and keep current source evidence separate from `research_notes` and `project_memories`.
+
+Codex also supports dedicated skills. If this assistant should become a reusable external Codex skill later, use the `skill-creator` guidance and create a concise skill folder such as:
 
 ```text
 ~/.codex/skills/project-memory-assistant/
@@ -271,7 +332,7 @@ Codex also supports dedicated skills. If this assistant should become a reusable
 
 Skill instructions should live in `SKILL.md`, not in a skill-local README. Keep the skill concise and move large project-specific details into `references/`.
 
-Claude Code often benefits from a root `CLAUDE.md`, and other agents often read `AGENTS.md`. If those files are added later, keep them short and point back to this README, the design spec, and the development history rule so there is one source of truth.
+Claude Code reads `CLAUDE.md`, and other agents often read `AGENTS.md`. Keep those files short and pointed back to this README, the design spec, and the development history rule so there is one source of truth.
 
 ## Safe Extension Path
 
@@ -281,6 +342,6 @@ Recommended next layers:
 2. Split the assistant into layered subgraphs: retrieval, QA, research, development advice, and memory reflection.
 3. Add real human-in-the-loop interrupts for approval-required workflows.
 4. Build the self-developed project memory layer: memory reflection, stale-memory demotion, proposal review, confidence tracking, and reusable project experience.
-5. Integrate Codex and Claude Code through shared agent instructions, optional `AGENTS.md`/`CLAUDE.md` pointer files, and explicit approval-aware handoff workflows.
+5. Integrate Codex and Claude Code through the existing `AGENTS.md`, `CLAUDE.md`, and `docs/superpowers/guides/agent-workflows.md` guidance, with explicit approval-aware handoff workflows.
 6. Add Docker deployment for repeatable local service startup, mounted SQLite/checkpoint storage, environment configuration, and health checks.
 7. Add skill capability with a concise `SKILL.md` and optional references so the assistant can be reused as an agent skill.
